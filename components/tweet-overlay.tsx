@@ -143,7 +143,7 @@ export default function TweetOverlay({
     
     // For shorter timeframes, be more aggressive about centering
     const isShortTimeframe = timeframe && ['5m', '15m', '1h'].includes(timeframe)
-    const toleranceMs = isShortTimeframe ? 15 * 60 * 1000 : 30 * 60 * 1000 // 15 min for short, 30 min for long
+    const toleranceMs = isShortTimeframe ? 15 * 60 * 1000 : 30 * 60 * 1000 // 15 min for short, 30 min for long (4h, 6h, 1d, 1w)
     
     const isOutsideRange = tweetTime < dataStart || tweetTime > dataEnd
     const isLargeDifference = minDifference > toleranceMs
