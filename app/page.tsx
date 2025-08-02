@@ -288,6 +288,7 @@ export default function TweetChartAnchor() {
                     <option value="4h">4 Hours</option>
                     <option value="6h">6 Hours</option>
                     <option value="1d">1 Day</option>
+                    <option value="1w">1 Week</option>
                   </select>
                   <p className="text-xs md:text-sm font-bold text-gray-600">Select chart timeframe for data (auto-updates on change)</p>
                 </div>
