@@ -131,9 +131,9 @@ export async function GET(request: NextRequest) {
     }
     
     // Always try DexScreener for marketcap data (even if Codex provides symbol)
-    let fallbackSymbol = null
-    let fallbackMarketCap = null
-    let fallbackTokenSupply = null
+    let fallbackSymbol: string | undefined = undefined
+    let fallbackMarketCap: number | undefined = undefined
+    let fallbackTokenSupply: number | undefined = undefined
     
     try {
       console.log(`🔄 Fetching DexScreener data for marketcap (always for accuracy)...`)
@@ -145,8 +145,8 @@ export async function GET(request: NextRequest) {
         if (dexData.pairs && dexData.pairs.length > 0) {
           const pair = dexData.pairs[0]
           fallbackSymbol = pair.baseToken?.symbol
-          fallbackMarketCap = pair.fdv // Fully diluted valuation from DexScreener
-          fallbackTokenSupply = pair.fdv && pair.priceUsd ? pair.fdv / parseFloat(pair.priceUsd) : null
+          fallbackMarketCap = pair.fdv || undefined // Fully diluted valuation from DexScreener
+          fallbackTokenSupply = pair.fdv && pair.priceUsd ? pair.fdv / parseFloat(pair.priceUsd) : undefined
           console.log(`✅ DexScreener data found: ${fallbackSymbol}, MarketCap: $${fallbackMarketCap ? (fallbackMarketCap / 1000000).toFixed(2) + 'M' : 'N/A'}`)
         }
       }
@@ -413,7 +413,8 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
     '1h': { primary: '60', fallback: '240' },    // 1 hour, fallback to 4h
     '4h': { primary: '240', fallback: '1D' },    // 4 hours, fallback to 1D
     '6h': { primary: '240', fallback: '1D' },    // Use 4h for 6h (6h might not be supported)
-    '1d': { primary: '1D', fallback: '240' }     // 1 day, fallback to 4h
+    '1d': { primary: '1D', fallback: '240' },    // 1 day, fallback to 4h
+    '1w': { primary: '7D', fallback: '1D' }      // 1 week (7 days), fallback to 1D
   }
   
   const resolutionConfig = resolutionMap[timeframe] || { primary: '60', fallback: '240' }
@@ -432,7 +433,8 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
       '1h': 16 * 60 * 60 * 1000,     // 16 hours total (8h before/after tweet)
       '4h': 5 * 24 * 60 * 60 * 1000, // 5 days total (2.5d before/after tweet)
       '6h': 8 * 24 * 60 * 60 * 1000, // 8 days total (4d before/after tweet)
-      '1d': 30 * 24 * 60 * 60 * 1000  // 30 days total (15d before/after tweet)
+      '1d': 30 * 24 * 60 * 60 * 1000, // 30 days total (15d before/after tweet)
+      '1w': 90 * 24 * 60 * 60 * 1000  // 90 days total (45d before/after tweet)
     }
     
     const totalRange = timeRanges[timeframe] || 16 * 60 * 60 * 1000
@@ -452,7 +454,8 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
       '1h': 7 * 24 * 60 * 60 * 1000, // Last 7 days
       '4h': 30 * 24 * 60 * 60 * 1000, // Last 30 days
       '6h': 30 * 24 * 60 * 60 * 1000, // Last 30 days
-      '1d': 90 * 24 * 60 * 60 * 1000  // Last 90 days
+      '1d': 90 * 24 * 60 * 60 * 1000, // Last 90 days
+      '1w': 365 * 24 * 60 * 60 * 1000 // Last 365 days (1 year)
     }
     
     const range = timeRanges[timeframe] || 24 * 60 * 60 * 1000
