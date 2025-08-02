@@ -229,7 +229,14 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
       let timeString: string
 
       // Format time based on timeframe - always include year to ensure correct display
-      if (timeframe === "1d") {
+      if (timeframe === "1w") {
+        // For weekly, show date with year only
+        timeString = date.toLocaleDateString("en-US", {
+          month: "short",
+          day: "numeric",
+          year: "2-digit",
+        })
+      } else if (timeframe === "1d") {
         // For daily, show date with year
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
@@ -298,6 +305,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
         case "4h": return 4 * 60 * 60 * 1000
         case "6h": return 6 * 60 * 60 * 1000
         case "1d": return 24 * 60 * 60 * 1000
+        case "1w": return 7 * 24 * 60 * 60 * 1000
         default: return 60 * 60 * 1000
       }
     }
@@ -310,6 +318,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
         case "4h": return 7 * 24 * 60 * 60 * 1000  // 7 days total for 4h candles
         case "6h": return 7 * 24 * 60 * 60 * 1000  // 7 days total for 6h candles
         case "1d": return 30 * 24 * 60 * 60 * 1000 // 30 days total for daily candles
+        case "1w": return 90 * 24 * 60 * 60 * 1000 // 90 days total for weekly candles
         default: return 24 * 60 * 60 * 1000
       }
     }
