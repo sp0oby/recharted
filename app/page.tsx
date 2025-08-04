@@ -123,13 +123,35 @@ export default function TweetChartAnchor() {
   }, [])
 
   const handleDownload = async () => {
-    if (chartCardRef.current) {
+    if (chartCardRef.current && chartContainerRef.current) {
       try {
+        // Temporarily constrain tweet position within bounds for capture
+        const originalPosition = tweetPosition
+        const containerRect = chartContainerRef.current.getBoundingClientRect()
+        const isMobile = window.innerWidth < 768
+        const tweetWidth = isMobile ? 128 : 288
+        const tweetHeight = isMobile ? 80 : 120
+        
+        // Ensure tweet is fully within container bounds
+        const constrainedPosition = {
+          x: Math.max(0, Math.min(originalPosition.x, containerRect.width - tweetWidth)),
+          y: Math.max(0, Math.min(originalPosition.y, containerRect.height - tweetHeight))
+        }
+        
+        // Temporarily update position for capture
+        setTweetPosition(constrainedPosition)
+        
+        // Wait for position update to render
+        await new Promise(resolve => setTimeout(resolve, 150))
+
         const canvas = await html2canvas(chartCardRef.current, {
           backgroundColor: "#ffffff",
           scale: 2,
           useCORS: true,
         })
+
+        // Restore original position
+        setTweetPosition(originalPosition)
 
         const link = document.createElement("a")
         link.download = `recharted.io-${apiChartData?.symbol?.replace("/", "-") || "roast"}-exposed.png`
@@ -142,13 +164,35 @@ export default function TweetChartAnchor() {
   }
 
   const handleCopyToClipboard = async () => {
-    if (chartCardRef.current) {
+    if (chartCardRef.current && chartContainerRef.current) {
       try {
+        // Temporarily constrain tweet position within bounds for capture
+        const originalPosition = tweetPosition
+        const containerRect = chartContainerRef.current.getBoundingClientRect()
+        const isMobile = window.innerWidth < 768
+        const tweetWidth = isMobile ? 128 : 288
+        const tweetHeight = isMobile ? 80 : 120
+        
+        // Ensure tweet is fully within container bounds
+        const constrainedPosition = {
+          x: Math.max(0, Math.min(originalPosition.x, containerRect.width - tweetWidth)),
+          y: Math.max(0, Math.min(originalPosition.y, containerRect.height - tweetHeight))
+        }
+        
+        // Temporarily update position for capture
+        setTweetPosition(constrainedPosition)
+        
+        // Wait for position update to render
+        await new Promise(resolve => setTimeout(resolve, 150))
+
         const canvas = await html2canvas(chartCardRef.current, {
           backgroundColor: "#ffffff",
           scale: 2,
           useCORS: true,
         })
+
+        // Restore original position
+        setTweetPosition(originalPosition)
 
         // Convert canvas to blob
         canvas.toBlob(async (blob) => {
@@ -198,7 +242,7 @@ export default function TweetChartAnchor() {
       const rect = chartContainerRef.current.getBoundingClientRect()
       const isMobile = window.innerWidth < 768
       const offsetX = isMobile ? 64 : 144 // Mobile: 128px/2, Desktop: 288px/2
-      const offsetY = isMobile ? 50 : 60
+      const offsetY = isMobile ? 40 : 60
       
       let clientX: number, clientY: number
       if ('touches' in e) {
@@ -211,10 +255,17 @@ export default function TweetChartAnchor() {
         clientY = e.clientY
       }
       
-      setTweetPosition({
-        x: clientX - rect.left - offsetX,
-        y: clientY - rect.top - offsetY,
-      })
+      const tweetWidth = isMobile ? 128 : 288
+      const tweetHeight = isMobile ? 60 : 120
+      
+      let x = clientX - rect.left - offsetX
+      let y = clientY - rect.top - offsetY
+      
+      // Constrain position within container bounds
+      x = Math.max(0, Math.min(x, rect.width - tweetWidth))
+      y = Math.max(0, Math.min(y, rect.height - tweetHeight))
+      
+      setTweetPosition({ x, y })
     }
   }
 
