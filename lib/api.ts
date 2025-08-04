@@ -225,7 +225,8 @@ export async function fetchTweetData(tweetUrl: string): Promise<TweetApiResponse
     console.log(`Extracted tweet ID: ${tweetId}`)
 
     // Try to fetch tweet data using our Next.js API route
-    const response = await fetch(`/api/tweet?id=${tweetId}`)
+    const encodedUrl = encodeURIComponent(tweetUrl)
+    const response = await fetch(`/api/tweet?id=${tweetId}&url=${encodedUrl}`)
     
     if (response.ok) {
       const data = await response.json()
