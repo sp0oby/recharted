@@ -10,6 +10,7 @@ function getToken(id: string): string {
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const tweetId = searchParams.get('id')
+  const tweetUrl = searchParams.get('url') // Add URL parameter for fallback
   
   if (!tweetId) {
     return NextResponse.json({ error: 'Tweet ID is required' }, { status: 400 })
@@ -80,9 +81,21 @@ export async function GET(request: NextRequest) {
     
     console.log('Parsed timestamp:', parsedTimestamp)
     
+    // Extract username from URL as fallback if API doesn't provide user data
+    let fallbackUsername = "unknown"
+    if (tweetUrl && (!data.user?.screen_name && !data.user?.name)) {
+      const urlMatch = tweetUrl.match(/(?:twitter\.com|x\.com)\/([^\/]+)\/status\/(\d+)/)
+      if (urlMatch) {
+        fallbackUsername = urlMatch[1]
+        console.log(`Using URL fallback username: ${fallbackUsername}`)
+      }
+    }
+    
+    const username = data.user?.screen_name || data.user?.name || fallbackUsername
+    
     return NextResponse.json({
-      username: data.user?.screen_name || data.user?.name || "unknown",
-      handle: `@${data.user?.screen_name || "unknown"}`,
+      username: username,
+      handle: `@${data.user?.screen_name || fallbackUsername}`,
       text: data.text || "Tweet content unavailable",
       timestamp: parsedTimestamp,
       profileImage: data.user?.profile_image_url_https || data.user?.profile_image_url || null,
