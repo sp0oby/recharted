@@ -82,7 +82,7 @@ export default function TweetOverlay({
 
         // Calculate tweet center - adjust for mobile
         const tweetWidth = isMobile ? 128 : 288
-        const tweetHeight = isMobile ? 60 : 120
+        const tweetHeight = isMobile ? 80 : 120
         const tweetCenterX = position.x + tweetWidth / 2
         const tweetCenterY = position.y + tweetHeight / 2
 
@@ -353,7 +353,7 @@ export default function TweetOverlay({
 
       {/* Tweet Card - Responsive */}
       <div
-        className={`absolute bg-white border-1 sm:border-4 border-black rounded p-1 sm:p-2 md:p-3 ${tweetWidth} shadow-[1px_1px_0px_0px_#000000] sm:shadow-[4px_4px_0px_0px_#000000] md:shadow-[6px_6px_0px_0px_#000000] ${
+        className={`absolute bg-white border-1 sm:border-4 border-black rounded p-1 sm:p-2 md:p-3 ${tweetWidth} min-h-fit shadow-[1px_1px_0px_0px_#000000] sm:shadow-[4px_4px_0px_0px_#000000] md:shadow-[6px_6px_0px_0px_#000000] ${
           isDragging ? "cursor-grabbing scale-105" : "cursor-grab"
         } select-none transition-transform duration-150`}
         style={{
@@ -387,19 +387,18 @@ export default function TweetOverlay({
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="font-black text-xs sm:text-sm md:text-base truncate">{tweetData.username}</div>
-            <div className="text-gray-600 font-bold text-xs truncate">{tweetData.handle}</div>
+            <div className="font-black text-xs sm:text-sm md:text-base break-words leading-tight">{tweetData.username}</div>
+            <div className="text-gray-600 font-bold text-xs break-words leading-tight">{tweetData.handle}</div>
           </div>
         </div>
 
         {/* Tweet Content */}
         <div className="mb-1 sm:mb-2 md:mb-3">
-          <p className="text-xs sm:text-sm md:text-base font-bold leading-tight overflow-hidden" style={{
-            display: '-webkit-box',
-            WebkitLineClamp: window.innerWidth < 640 ? 2 : 'none',
-            WebkitBoxOrient: 'vertical',
-            textOverflow: 'ellipsis'
-          }}>{tweetData.text}</p>
+          <p className="text-xs sm:text-sm md:text-base font-bold leading-relaxed sm:leading-tight break-words"
+             style={{
+               wordWrap: 'break-word',
+               overflowWrap: 'break-word'
+             }}>{tweetData.text}</p>
         </div>
 
         {/* Tweet Metadata - Hide on mobile to save space */}
