@@ -290,7 +290,6 @@ export default function TweetChartAnchor() {
                     <option value="1d">1 Day</option>
                     <option value="1w">1 Week</option>
                   </select>
-                  <p className="text-xs md:text-sm font-bold text-gray-600">Select chart timeframe for data (auto-updates on change)</p>
                 </div>
               </CardContent>
             </Card>
@@ -348,7 +347,7 @@ export default function TweetChartAnchor() {
                     onMouseLeave={handleMouseUp}
                   >
                     <TradingChart
-                      key={`chart-${apiChartData?.symbol || "default"}-${timeframe}`}
+                      key={`chart-${apiChartData?.symbol || "default"}-${timeframe}-${tweetData.timestamp}`}
                       tokenPair={apiChartData?.symbol || "Loading..."}
                       chartData={apiChartData}
                       timeframe={timeframe}
