@@ -234,28 +234,26 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
       const date = new Date(timestamp)
       let timeString: string
 
-      // Format time based on timeframe - always include year to ensure correct display
+      // Format time based on timeframe - consistent formatting across all timeframes
       if (timeframe === "1w") {
-        // For weekly, show date with year only
+        // For weekly, show date only (no time, no year for consistency)
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-          year: "2-digit",
         })
       } else if (timeframe === "1d") {
-        // For daily, show date with year
+        // For daily, show date only (no time, no year for consistency)
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-          year: "2-digit",
         })
       } else if (timeframe === "4h" || timeframe === "6h") {
-        // For 4h and 6h, show date and time with year
+        // For 4h and 6h, show date and time (consistent with shorter timeframes)
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
-          year: "2-digit",
           hour: "2-digit",
+          minute: "2-digit",
           hour12: false,
         })
       } else {
