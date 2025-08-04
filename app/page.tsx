@@ -193,20 +193,41 @@ export default function TweetChartAnchor() {
     setIsDragging(true)
   }
 
-  const handleMouseMove = (e: React.MouseEvent) => {
+  const handleMouseMove = (e: React.MouseEvent | TouchEvent) => {
     if (isDragging && chartContainerRef.current) {
       const rect = chartContainerRef.current.getBoundingClientRect()
       const isMobile = window.innerWidth < 768
-      const offsetX = isMobile ? 112 : 144 // Mobile: 224px/2, Desktop: 288px/2
+      const offsetX = isMobile ? 64 : 144 // Mobile: 128px/2, Desktop: 288px/2
       const offsetY = isMobile ? 50 : 60
+      
+      let clientX: number, clientY: number
+      if ('touches' in e) {
+        // Touch event
+        clientX = e.touches[0]?.clientX || 0
+        clientY = e.touches[0]?.clientY || 0
+      } else {
+        // Mouse event
+        clientX = e.clientX
+        clientY = e.clientY
+      }
+      
       setTweetPosition({
-        x: e.clientX - rect.left - offsetX,
-        y: e.clientY - rect.top - offsetY,
+        x: clientX - rect.left - offsetX,
+        y: clientY - rect.top - offsetY,
       })
     }
   }
 
   const handleMouseUp = () => {
+    setIsDragging(false)
+  }
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault()
+    handleMouseMove(e.nativeEvent)
+  }
+
+  const handleTouchEnd = () => {
     setIsDragging(false)
   }
 
@@ -222,11 +243,11 @@ export default function TweetChartAnchor() {
         </div>
       </div>
 
-      <div className="container mx-auto px-4 py-4 md:py-8">
+      <div className="container mx-auto px-2 sm:px-4 py-4 md:py-8 max-w-7xl">
         {/* Responsive layout - vertical on mobile, horizontal on desktop */}
-        <div className="flex flex-col lg:flex-row gap-4 md:gap-8 min-h-[calc(100vh-200px)]">
+        <div className="flex flex-col xl:flex-row gap-4 md:gap-6 xl:gap-8 min-h-[calc(100vh-200px)]">
           {/* Left Panel - Inputs */}
-          <div className="w-full lg:w-80 space-y-4 md:space-y-6 flex-shrink-0">
+          <div className="w-full xl:w-80 space-y-4 md:space-y-6 flex-shrink-0 order-1">
             <Card className="border-4 border-black shadow-[4px_4px_0px_0px_#000000] md:shadow-[8px_8px_0px_0px_#000000]">
               <CardHeader className="bg-black text-white">
                 <CardTitle className="flex items-center gap-2 font-black text-lg md:text-xl">
@@ -294,13 +315,13 @@ export default function TweetChartAnchor() {
               </CardContent>
             </Card>
 
-            <div className="flex flex-col sm:flex-row lg:flex-col gap-4">
+            <div className="flex flex-col sm:flex-row xl:flex-col gap-3 sm:gap-4">
               <Button
                 onClick={handleGenerate}
                 disabled={isLoading}
-                className="flex-1 bg-black text-white border-4 border-black hover:bg-white hover:text-black font-black text-base md:text-lg py-4 md:py-6 shadow-[2px_2px_0px_0px_#000000] md:shadow-[4px_4px_0px_0px_#000000] hover:shadow-[1px_1px_0px_0px_#000000] md:hover:shadow-[2px_2px_0px_0px_#000000] transition-all disabled:opacity-50"
+                className="flex-1 bg-black text-white border-4 border-black hover:bg-white hover:text-black font-black text-sm sm:text-base md:text-lg py-3 sm:py-4 md:py-6 shadow-[2px_2px_0px_0px_#000000] md:shadow-[4px_4px_0px_0px_#000000] hover:shadow-[1px_1px_0px_0px_#000000] md:hover:shadow-[2px_2px_0px_0px_#000000] transition-all disabled:opacity-50 min-h-[48px] sm:min-h-[52px]"
               >
-                <Zap className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                <Zap className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" />
                 {isLoading ? "FETCHING THE RECEIPTS..." : "GENERATE"}
               </Button>
 
@@ -308,17 +329,18 @@ export default function TweetChartAnchor() {
                 <>
                   <Button
                     onClick={handleCopyToClipboard}
-                    className="flex-1 bg-blue-500 text-white border-4 border-black hover:bg-blue-600 font-black text-base md:text-lg py-4 md:py-6 shadow-[2px_2px_0px_0px_#000000] md:shadow-[4px_4px_0px_0px_#000000] hover:shadow-[1px_1px_0px_0px_#000000] md:hover:shadow-[2px_2px_0px_0px_#000000] transition-all"
+                    className="flex-1 bg-blue-500 text-white border-4 border-black hover:bg-blue-600 font-black text-sm sm:text-base md:text-lg py-3 sm:py-4 md:py-6 shadow-[2px_2px_0px_0px_#000000] md:shadow-[4px_4px_0px_0px_#000000] hover:shadow-[1px_1px_0px_0px_#000000] md:hover:shadow-[2px_2px_0px_0px_#000000] transition-all min-h-[48px] sm:min-h-[52px]"
                   >
-                    <Copy className="w-4 h-4 md:w-5 md:h-5 mr-2" />
-                    COPY TO CLIPBOARD
+                    <Copy className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" />
+                    <span className="hidden sm:inline">COPY TO CLIPBOARD</span>
+                    <span className="sm:hidden">COPY</span>
                   </Button>
 
                   <Button
                     onClick={handleDownload}
-                    className="flex-1 bg-white text-black border-4 border-black hover:bg-black hover:text-white font-black text-base md:text-lg py-4 md:py-6 shadow-[2px_2px_0px_0px_#000000] md:shadow-[4px_4px_0px_0px_#000000] hover:shadow-[1px_1px_0px_0px_#000000] md:hover:shadow-[2px_2px_0px_0px_#000000] transition-all"
+                    className="flex-1 bg-white text-black border-4 border-black hover:bg-black hover:text-white font-black text-sm sm:text-base md:text-lg py-3 sm:py-4 md:py-6 shadow-[2px_2px_0px_0px_#000000] md:shadow-[4px_4px_0px_0px_#000000] hover:shadow-[1px_1px_0px_0px_#000000] md:hover:shadow-[2px_2px_0px_0px_#000000] transition-all min-h-[48px] sm:min-h-[52px]"
                   >
-                    <Download className="w-4 h-4 md:w-5 md:h-5 mr-2" />
+                    <Download className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" />
                     DOWNLOAD
                   </Button>
                 </>
@@ -327,24 +349,26 @@ export default function TweetChartAnchor() {
           </div>
 
           {/* Right Panel - Chart Display */}
-          <div className="flex-1 relative min-h-[400px] md:min-h-[500px]">
+          <div className="flex-1 relative min-h-[350px] sm:min-h-[400px] md:min-h-[500px] lg:min-h-[600px] order-2">
             <Card ref={chartCardRef} className="border-4 border-black shadow-[4px_4px_0px_0px_#000000] md:shadow-[8px_8px_0px_0px_#000000] h-full rounded-none" style={{backgroundColor: '#000000'}}>
-              <CardHeader className="bg-black text-white relative">
-                <CardTitle className="font-black text-2xl md:text-4xl">RECHARTED.IO</CardTitle>
+              <CardHeader className="bg-black text-white relative p-3 sm:p-4 md:p-6">
+                <CardTitle className="font-black text-lg sm:text-xl md:text-2xl lg:text-4xl">RECHARTED.IO</CardTitle>
                 {apiChartData?.symbol && (
-                  <div className="absolute top-2 right-2 font-black text-2xl md:text-4xl">
+                  <div className="absolute top-2 sm:top-3 md:top-4 right-2 sm:right-3 md:right-4 font-black text-lg sm:text-xl md:text-2xl lg:text-4xl">
                     {apiChartData.symbol.split('/')[0]}
                   </div>
                 )}
               </CardHeader>
-              <CardContent className="p-0 h-[calc(100%-80px)] md:h-[calc(100%-100px)]" style={{backgroundColor: '#000000'}}>
+              <CardContent className="p-0 h-[calc(100%-60px)] sm:h-[calc(100%-72px)] md:h-[calc(100%-80px)] lg:h-[calc(100%-100px)]" style={{backgroundColor: '#000000'}}>
                 {isGenerated ? (
                   <div
                     ref={chartContainerRef}
-                    className="relative w-full h-full bg-black overflow-hidden cursor-crosshair"
+                    className="relative w-full h-full bg-black overflow-hidden cursor-crosshair touch-none"
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
                   >
                     <TradingChart
                       key={`chart-${apiChartData?.symbol || "default"}-${timeframe}-${tweetData.timestamp}`}
