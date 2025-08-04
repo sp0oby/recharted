@@ -32,16 +32,20 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
     if (chartRef.current) {
       const ctx = chartRef.current.getContext("2d")
       if (ctx) {
-        // Destroy existing chart
+        // Destroy existing chart more thoroughly
         if (chartInstance.current) {
+          console.log(`🧹 Destroying previous chart instance for cleanup`)
           chartInstance.current.destroy()
           chartInstance.current = null
         }
 
+        // Clear canvas to prevent visual artifacts
+        ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height)
+
         // Reset the ready flag
         hasCalledReady.current = false
 
-        console.log(`Rendering chart for timeframe: ${timeframe} with tweet timestamp: ${tweetTimestamp}`)
+        console.log(`📊 Rendering chart for timeframe: ${timeframe} with tweet timestamp: ${tweetTimestamp}`)
 
         // Use real chart data if available, otherwise fall back to mock data
         const dataToUse = chartData ? convertApiDataToChartData(chartData) : generateMockCandlestickData(tweetTimestamp)
@@ -105,21 +109,23 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                   size: window.innerWidth < 768 ? 10 : 12,
                   weight: "bold",
                 },
-                // Format as market cap using real marketcap from API (no complex calculations)
+                // Format as market cap - use real marketcap but scale proportionally with price
                 callback: function(value: any): string {
-                  // Use real marketcap from API if available
                   const realMarketCap = (chartData as any)?.marketCap
                   const tokenSupply = (chartData as any)?.tokenSupply
+                  const currentPrice = (chartData as any)?.currentPrice
                   
                   let marketCap: number
-                  if (realMarketCap) {
-                    // Use real marketcap from DexScreener API (most accurate)
-                    marketCap = realMarketCap
+                  
+                  if (realMarketCap && currentPrice) {
+                    // Use real marketcap as baseline, scale proportionally with current price level
+                    // Formula: realMarketCap * (currentPriceLevel / actualCurrentPrice)
+                    marketCap = realMarketCap * (value / currentPrice)
                   } else if (tokenSupply) {
-                    // Fallback: calculate from current price * supply
+                    // Fallback: calculate from token supply
                     marketCap = value * tokenSupply
                   } else {
-                    // Last resort: assume 1B supply (for display purposes only)
+                    // Last resort: assume 1B supply for display purposes
                     marketCap = value * 1000000000
                   }
                   
