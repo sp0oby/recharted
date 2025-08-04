@@ -112,14 +112,18 @@ export default function TweetOverlay({
       inputDateTime.setHours(hours, minutes, 0, 0)
     }
 
-    console.log(`Looking for anchor point for: ${time} -> ${inputDateTime.toISOString()}`)
+    console.log(`🎯 Looking for anchor point for: ${time} -> ${inputDateTime.toISOString()}`)
+    console.log(`🕐 Tweet time in local: ${inputDateTime.toLocaleString()}`)
+    console.log(`🕐 Tweet time in UTC: ${inputDateTime.toISOString()}`)
     
-    console.log(`Available time data points:`, chartData.timeData.slice(0, 5).map(d => ({
+    console.log(`📊 Available time data points:`, chartData.timeData.slice(0, 5).map(d => ({
       time: d.time,
       timestamp: new Date(d.timestamp).toISOString(),
+      localTime: new Date(d.timestamp).toLocaleString(),
       price: d.price
     })))
-    console.log(`Chart data range: ${new Date(chartData.timeData[0]?.timestamp).toISOString()} to ${new Date(chartData.timeData[chartData.timeData.length - 1]?.timestamp).toISOString()}`)
+    console.log(`📅 Chart data range: ${new Date(chartData.timeData[0]?.timestamp).toISOString()} to ${new Date(chartData.timeData[chartData.timeData.length - 1]?.timestamp).toISOString()}`)
+    console.log(`📅 Chart range local: ${new Date(chartData.timeData[0]?.timestamp).toLocaleString()} to ${new Date(chartData.timeData[chartData.timeData.length - 1]?.timestamp).toLocaleString()}`)
 
     // Find the closest time point in our chart data, or use center if tweet is adjusted
     let closestIndex = 0
@@ -141,15 +145,24 @@ export default function TweetOverlay({
     const dataEnd = chartData.timeData[chartData.timeData.length - 1]?.timestamp
     const tweetTime = inputDateTime.getTime()
     
-    // For shorter timeframes, be more aggressive about centering
+    // Adjust tolerance based on timeframe - weekly needs much larger tolerance due to sparse data
     const isShortTimeframe = timeframe && ['5m', '15m', '1h'].includes(timeframe)
-    const toleranceMs = isShortTimeframe ? 15 * 60 * 1000 : 30 * 60 * 1000 // 15 min for short, 30 min for long (4h, 6h, 1d, 1w)
+    const isWeeklyTimeframe = timeframe === '1w'
+    
+    let toleranceMs: number
+    if (isShortTimeframe) {
+      toleranceMs = 15 * 60 * 1000 // 15 minutes for short timeframes
+    } else if (isWeeklyTimeframe) {
+      toleranceMs = 7 * 24 * 60 * 60 * 1000 // 7 days for weekly timeframe (much larger tolerance)
+    } else {
+      toleranceMs = 30 * 60 * 1000 // 30 minutes for medium timeframes (4h, 6h, 1d)
+    }
     
     const isOutsideRange = tweetTime < dataStart || tweetTime > dataEnd
     const isLargeDifference = minDifference > toleranceMs
     
-    // For short timeframes, always center if difference is more than 15 minutes
-    // For long timeframes, center if outside range or >30 minutes difference
+    // Center anchor if tweet is outside data range or time difference exceeds tolerance
+    // Tolerance: 15min (short), 30min (medium), 7 days (weekly)
     if (isOutsideRange || isLargeDifference) {
       closestIndex = Math.floor(chartData.timeData.length / 2)
       usingCenterFallback = true
@@ -159,7 +172,11 @@ export default function TweetOverlay({
         console.log(`📊 Data range: ${new Date(dataStart).toISOString()} to ${new Date(dataEnd).toISOString()}`)
         console.log(`🎯 Tweet time: ${inputDateTime.toISOString()} - centering anchor`)
       } else {
-        console.log(`⚖️ Large time difference detected (${Math.round(minDifference / (60 * 1000))} min) for ${timeframe}, using center at index ${closestIndex}`)
+        const timeDiffHours = Math.round(minDifference / (60 * 60 * 1000))
+        const timeDiffMinutes = Math.round(minDifference / (60 * 1000))
+        const displayDiff = timeDiffHours > 1 ? `${timeDiffHours}h` : `${timeDiffMinutes}min`
+        console.log(`⚖️ Large time difference detected (${displayDiff}) for ${timeframe}, using center at index ${closestIndex}`)
+        console.log(`📏 Tolerance for ${timeframe}: ${isWeeklyTimeframe ? '7 days' : isShortTimeframe ? '15min' : '30min'}`)
       }
     }
     
