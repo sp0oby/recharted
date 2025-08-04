@@ -48,6 +48,7 @@ export default function TweetOverlay({
   const [arrowPath, setArrowPath] = useState("")
   const [anchorPoint, setAnchorPoint] = useState({ x: 0, y: 0 })
   const [isMobile, setIsMobile] = useState(false)
+  const [isTouch, setIsTouch] = useState(false)
   const [storedTweetTime, setStoredTweetTime] = useState(tradeTime) // Store tweet time and update when tweet changes
   
   // Update stored tweet time when tradeTime changes (new tweet)
@@ -59,6 +60,7 @@ export default function TweetOverlay({
   useEffect(() => {
     const checkMobile = () => {
       setIsMobile(window.innerWidth < 768)
+      setIsTouch('ontouchstart' in window || navigator.maxTouchPoints > 0)
     }
 
     checkMobile()
@@ -79,8 +81,8 @@ export default function TweetOverlay({
         setAnchorPoint(timeAnchor)
 
         // Calculate tweet center - adjust for mobile
-        const tweetWidth = isMobile ? 240 : 288
-        const tweetHeight = isMobile ? 100 : 120
+        const tweetWidth = isMobile ? 128 : 288
+        const tweetHeight = isMobile ? 60 : 120
         const tweetCenterX = position.x + tweetWidth / 2
         const tweetCenterY = position.y + tweetHeight / 2
 
@@ -261,7 +263,7 @@ export default function TweetOverlay({
   }
 
   // Responsive tweet card dimensions
-  const tweetWidth = isMobile ? "w-56" : "w-72"
+  const tweetWidth = isMobile ? "w-32" : "w-72"
   const anchorSize = isMobile ? "w-4 h-4" : "w-5 h-5"
   const anchorOffset = isMobile ? 8 : 10
 
@@ -351,7 +353,7 @@ export default function TweetOverlay({
 
       {/* Tweet Card - Responsive */}
       <div
-        className={`absolute bg-white border-4 border-black rounded-lg p-2 md:p-3 ${tweetWidth} shadow-[4px_4px_0px_0px_#000000] md:shadow-[6px_6px_0px_0px_#000000] ${
+        className={`absolute bg-white border-1 sm:border-4 border-black rounded p-1 sm:p-2 md:p-3 ${tweetWidth} shadow-[1px_1px_0px_0px_#000000] sm:shadow-[4px_4px_0px_0px_#000000] md:shadow-[6px_6px_0px_0px_#000000] ${
           isDragging ? "cursor-grabbing scale-105" : "cursor-grab"
         } select-none transition-transform duration-150`}
         style={{
@@ -360,33 +362,48 @@ export default function TweetOverlay({
           zIndex: 20,
         }}
         onMouseDown={onMouseDown}
+        onTouchStart={isTouch ? (e) => {
+          e.preventDefault()
+          const touch = e.touches[0]
+          const mouseEvent = new MouseEvent('mousedown', {
+            clientX: touch.clientX,
+            clientY: touch.clientY,
+            bubbles: true
+          })
+          onMouseDown(mouseEvent as any)
+        } : undefined}
       >
         {/* Tweet Header */}
-        <div className="flex items-center gap-2 mb-2">
+        <div className="flex items-center gap-1 sm:gap-2 mb-1 sm:mb-2">
           {tweetData.profileImage ? (
             <img 
               src={tweetData.profileImage} 
               alt={tweetData.username}
-              className="w-8 h-8 md:w-10 md:h-10 rounded-full border-2 border-black object-cover"
+              className="w-4 h-4 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-full border-1 sm:border-2 border-black object-cover"
             />
           ) : (
-            <div className="w-8 h-8 md:w-10 md:h-10 bg-gray-300 rounded-full border-2 border-black flex items-center justify-center font-black text-xs md:text-sm">
+            <div className="w-4 h-4 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-gray-300 rounded-full border-1 sm:border-2 border-black flex items-center justify-center font-black text-xs">
               {tweetData.username.charAt(0).toUpperCase()}
             </div>
           )}
-          <div>
-            <div className="font-black text-sm md:text-base">{tweetData.username}</div>
-            <div className="text-gray-600 font-bold text-xs md:text-sm">{tweetData.handle}</div>
+          <div className="min-w-0 flex-1">
+            <div className="font-black text-xs sm:text-sm md:text-base truncate">{tweetData.username}</div>
+            <div className="text-gray-600 font-bold text-xs truncate">{tweetData.handle}</div>
           </div>
         </div>
 
         {/* Tweet Content */}
-        <div className="mb-2 md:mb-3">
-          <p className="text-sm md:text-base font-bold whitespace-pre-line leading-tight">{tweetData.text}</p>
+        <div className="mb-1 sm:mb-2 md:mb-3">
+          <p className="text-xs sm:text-sm md:text-base font-bold leading-tight overflow-hidden" style={{
+            display: '-webkit-box',
+            WebkitLineClamp: window.innerWidth < 640 ? 2 : 'none',
+            WebkitBoxOrient: 'vertical',
+            textOverflow: 'ellipsis'
+          }}>{tweetData.text}</p>
         </div>
 
-        {/* Tweet Metadata */}
-        <div className="text-xs text-gray-600 font-bold mb-2">
+        {/* Tweet Metadata - Hide on mobile to save space */}
+        <div className="hidden sm:block text-xs text-gray-600 font-bold mb-1 sm:mb-2">
           {new Date(tweetData.timestamp).toLocaleDateString("en-US", { 
             month: "short", 
             day: "numeric", 
