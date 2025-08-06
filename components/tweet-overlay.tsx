@@ -127,11 +127,14 @@ export default function TweetOverlay({
     console.log(`📅 Chart data range: ${new Date(chartData.timeData[0]?.timestamp).toISOString()} to ${new Date(chartData.timeData[chartData.timeData.length - 1]?.timestamp).toISOString()}`)
     console.log(`📅 Chart range local: ${new Date(chartData.timeData[0]?.timestamp).toLocaleString()} to ${new Date(chartData.timeData[chartData.timeData.length - 1]?.timestamp).toLocaleString()}`)
 
-    // Find the closest time point in our chart data, or use center if tweet is adjusted
-    let closestIndex = 0
+    // Find the EARLIEST point of a significant price movement around the tweet time
+    let anchorIndex = 0
     let minDifference = Number.POSITIVE_INFINITY
     let usingCenterFallback = false
+    let spikeDetected = false
 
+    // First, find the closest time point as a baseline
+    let closestIndex = 0
     chartData.timeData.forEach((dataPoint, index) => {
       const dataDateTime = new Date(dataPoint.timestamp)
       const difference = Math.abs(dataDateTime.getTime() - inputDateTime.getTime())
@@ -141,6 +144,46 @@ export default function TweetOverlay({
         closestIndex = index
       }
     })
+
+    // Now look for the EARLIEST point of a significant price movement around the tweet time
+    // Search in a window around the closest time point
+    const searchWindowSize = Math.min(10, Math.floor(chartData.timeData.length / 4)) // Search up to 10 points or 25% of data
+    const searchStart = Math.max(0, closestIndex - searchWindowSize)
+    const searchEnd = Math.min(chartData.timeData.length - 1, closestIndex + searchWindowSize)
+    
+    console.log(`🔍 Searching for spike start from index ${searchStart} to ${searchEnd} (around tweet index ${closestIndex})`)
+    
+    // Look for significant price movements (spikes up or down) in the search window
+    let maxPriceChange = 0
+    let spikeStartIndex = closestIndex
+    
+    for (let i = searchStart; i < searchEnd - 1; i++) {
+      const currentPrice = chartData.prices[i]
+      const nextPrice = chartData.prices[i + 1]
+      
+      if (currentPrice && nextPrice) {
+        const priceChange = Math.abs((nextPrice - currentPrice) / currentPrice)
+        
+        // Look for significant movements (>5% for high sensitivity to capture more spikes)
+        if (priceChange > 0.05 && priceChange > maxPriceChange) {
+          maxPriceChange = priceChange
+          spikeStartIndex = i // This is the START of the movement (before the change)
+          spikeDetected = true
+        }
+      }
+    }
+    
+    // Use spike start if detected, otherwise use closest time
+    anchorIndex = spikeDetected ? spikeStartIndex : closestIndex
+    
+    if (spikeDetected) {
+      console.log(`🚀 Spike detected! ${(maxPriceChange * 100).toFixed(1)}% movement starting at index ${spikeStartIndex}`)
+      console.log(`📍 Anchoring at SPIKE START: ${new Date(chartData.timeData[spikeStartIndex].timestamp).toISOString()}`)
+      console.log(`💰 Price at spike start: $${chartData.prices[spikeStartIndex]?.toFixed(8)}`)
+      console.log(`💰 Price after movement: $${chartData.prices[spikeStartIndex + 1]?.toFixed(8)}`)
+    } else {
+      console.log(`📍 No significant spike detected, using closest time match at index ${closestIndex}`)
+    }
     
     // Check if the tweet timestamp is outside the available data range
     const dataStart = chartData.timeData[0]?.timestamp
@@ -166,18 +209,18 @@ export default function TweetOverlay({
     // Center anchor if tweet is outside data range or time difference exceeds tolerance
     // Tolerance: 15min (short), 30min (medium), 7 days (weekly)
     if (isOutsideRange || isLargeDifference) {
-      closestIndex = Math.floor(chartData.timeData.length / 2)
+      anchorIndex = Math.floor(chartData.timeData.length / 2)
       usingCenterFallback = true
       
       if (isOutsideRange) {
-        console.log(`⚖️ Tweet outside data range, using center of chart at index ${closestIndex}`)
+        console.log(`⚖️ Tweet outside data range, using center of chart at index ${anchorIndex}`)
         console.log(`📊 Data range: ${new Date(dataStart).toISOString()} to ${new Date(dataEnd).toISOString()}`)
         console.log(`🎯 Tweet time: ${inputDateTime.toISOString()} - centering anchor`)
       } else {
         const timeDiffHours = Math.round(minDifference / (60 * 60 * 1000))
         const timeDiffMinutes = Math.round(minDifference / (60 * 1000))
         const displayDiff = timeDiffHours > 1 ? `${timeDiffHours}h` : `${timeDiffMinutes}min`
-        console.log(`⚖️ Large time difference detected (${displayDiff}) for ${timeframe}, using center at index ${closestIndex}`)
+        console.log(`⚖️ Large time difference detected (${displayDiff}) for ${timeframe}, using center at index ${anchorIndex}`)
         console.log(`📏 Tolerance for ${timeframe}: ${isWeeklyTimeframe ? '7 days' : isShortTimeframe ? '15min' : '30min'}`)
       }
     }
@@ -186,11 +229,13 @@ export default function TweetOverlay({
     console.log(`⏰ Time difference: ${Math.round(minDifference / (60 * 1000))} minutes from tweet to closest data point`)
 
     // Validate that we have valid chart data before accessing it
-    if (chartData.timeData && chartData.timeData[closestIndex]) {
+    if (chartData.timeData && chartData.timeData[anchorIndex]) {
       if (usingCenterFallback) {
-        console.log(`Using center fallback at index ${closestIndex}: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
+        console.log(`Using center fallback at index ${anchorIndex}: ${new Date(chartData.timeData[anchorIndex].timestamp).toISOString()}`)
+      } else if (spikeDetected) {
+        console.log(`Final anchor at SPIKE START index ${anchorIndex}: ${new Date(chartData.timeData[anchorIndex].timestamp).toISOString()}`)
       } else {
-        console.log(`Found closest match at index ${closestIndex}: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
+        console.log(`Final anchor at closest time index ${anchorIndex}: ${new Date(chartData.timeData[anchorIndex].timestamp).toISOString()}`)
         console.log(`Time difference: ${minDifference}ms (${Math.round(minDifference / 1000 / 60)} minutes)`)
       }
     } else {
@@ -221,8 +266,8 @@ export default function TweetOverlay({
     
     // Try Chart.js metadata first
     const metaData = chart.getDatasetMeta(0)
-    if (metaData && metaData.data && metaData.data[closestIndex]) {
-      const point = metaData.data[closestIndex]
+    if (metaData && metaData.data && metaData.data[anchorIndex]) {
+      const point = metaData.data[anchorIndex]
       if (point && typeof point.x === 'number' && typeof point.y === 'number') {
         const adjustedX = point.x + canvasOffsetX
         const adjustedY = point.y + canvasOffsetY
@@ -234,15 +279,15 @@ export default function TweetOverlay({
     // Fallback: use scale calculations with canvas offset
     const xScale = chart.scales.x
     const yScale = chart.scales.y
-    const scaleX = xScale.getPixelForValue(closestIndex)
-    const priceAtTime = chartData.prices[closestIndex] || 0.000001
+    const scaleX = xScale.getPixelForValue(anchorIndex)
+    const priceAtTime = chartData.prices[anchorIndex] || 0.000001
     const scaleY = yScale.getPixelForValue(priceAtTime)
     
     const anchorX = scaleX + canvasOffsetX
     const anchorY = scaleY + canvasOffsetY
     
     console.log(`⚠️ Using scale calculation: (${scaleX}, ${scaleY}) -> adjusted: (${anchorX}, ${anchorY})`)
-    console.log(`Price at time: ${priceAtTime}, Index: ${closestIndex}`)
+    console.log(`Price at time: ${priceAtTime}, Index: ${anchorIndex}`)
     
     return { x: anchorX, y: anchorY }
   }
@@ -312,7 +357,7 @@ export default function TweetOverlay({
           zIndex: 14,
         }}
       />
-      
+
       {/* Debug: Small yellow dot at exact calculated position */}
       <div
         className="absolute w-1 h-1 bg-yellow-500 pointer-events-none"
