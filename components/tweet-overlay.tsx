@@ -75,7 +75,7 @@ export default function TweetOverlay({
       const chart = chartData.chartInstance
       const chartArea = chart.chartArea
 
-      if (chartArea) {
+      if (chartArea && chart.canvas) {
         // Always use the stored tweet time to maintain anchor position
         const timeAnchor = calculateTimeAnchorOnLine(storedTweetTime, chartArea, chartData, chart)
         setAnchorPoint(timeAnchor)
@@ -199,6 +199,11 @@ export default function TweetOverlay({
 
     // Get the canvas element and its position
     const canvas = chart.canvas
+    if (!canvas) {
+      console.error('Canvas element not available')
+      return { x: 0, y: 0 }
+    }
+    
     const canvasRect = canvas.getBoundingClientRect()
     const containerRect = chartContainerRef.current?.getBoundingClientRect()
     
