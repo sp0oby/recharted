@@ -197,39 +197,49 @@ export default function TweetOverlay({
       console.warn('No valid chart data available for time anchor calculation')
     }
 
-    // Use Chart.js scales to get exact pixel positions
+    // Get the canvas element and its position
+    const canvas = chart.canvas
+    const canvasRect = canvas.getBoundingClientRect()
+    const containerRect = chartContainerRef.current?.getBoundingClientRect()
+    
+    if (!containerRect) {
+      console.error('Container ref not available')
+      return { x: 0, y: 0 }
+    }
+    
+    // Calculate offset between canvas and container
+    const canvasOffsetX = canvasRect.left - containerRect.left
+    const canvasOffsetY = canvasRect.top - containerRect.top
+    
+    console.log(`Canvas offset: (${canvasOffsetX}, ${canvasOffsetY})`)
+    console.log(`Chart area: left=${chartArea.left}, top=${chartArea.top}, right=${chartArea.right}, bottom=${chartArea.bottom}`)
+    
+    // Try Chart.js metadata first
+    const metaData = chart.getDatasetMeta(0)
+    if (metaData && metaData.data && metaData.data[closestIndex]) {
+      const point = metaData.data[closestIndex]
+      if (point && typeof point.x === 'number' && typeof point.y === 'number') {
+        const adjustedX = point.x + canvasOffsetX
+        const adjustedY = point.y + canvasOffsetY
+        console.log(`✅ Using Chart.js line point: (${point.x}, ${point.y}) -> adjusted: (${adjustedX}, ${adjustedY})`)
+        return { x: adjustedX, y: adjustedY }
+      }
+    }
+
+    // Fallback: use scale calculations with canvas offset
     const xScale = chart.scales.x
     const yScale = chart.scales.y
-
-    // Get X position using Chart.js scale - use the exact index
-    const anchorX = xScale.getPixelForValue(closestIndex)
-
-    // Get Y position using Chart.js scale and actual price at that exact index
-    const rawPrice = chartData.prices[closestIndex]
-    const priceAtTime = (typeof rawPrice === 'number' && !isNaN(rawPrice)) ? rawPrice : 0.000001
+    const scaleX = xScale.getPixelForValue(closestIndex)
+    const priceAtTime = chartData.prices[closestIndex] || 0.000001
+    const scaleY = yScale.getPixelForValue(priceAtTime)
     
-    if (typeof rawPrice !== 'number' || isNaN(rawPrice)) {
-      console.error(`Invalid price at index ${closestIndex}:`, rawPrice, 'using fallback:', priceAtTime)
-      console.error('Available prices:', chartData.prices.slice(Math.max(0, closestIndex-2), closestIndex+3))
-    }
+    const anchorX = scaleX + canvasOffsetX
+    const anchorY = scaleY + canvasOffsetY
     
-    const anchorY = yScale.getPixelForValue(priceAtTime)
-
-    console.log(`Anchor positioned at X: ${anchorX}, Y: ${anchorY} for price: ${priceAtTime}`)
-
-    // Validate anchor position to prevent NaN
-    const validX = isNaN(anchorX) ? 0 : anchorX
-    const validY = isNaN(anchorY) ? 0 : anchorY
+    console.log(`⚠️ Using scale calculation: (${scaleX}, ${scaleY}) -> adjusted: (${anchorX}, ${anchorY})`)
+    console.log(`Price at time: ${priceAtTime}, Index: ${closestIndex}`)
     
-    if (isNaN(anchorX) || isNaN(anchorY)) {
-      console.error('NaN detected in anchor position!', {
-        anchorX, anchorY, priceAtTime, 
-        xScaleType: typeof xScale.getPixelForValue,
-        yScaleType: typeof yScale.getPixelForValue
-      })
-    }
-
-    return { x: validX, y: validY }
+    return { x: anchorX, y: anchorY }
   }
 
   const findClosestTimeIndex = (time: string, chartData: ChartData) => {
@@ -297,34 +307,18 @@ export default function TweetOverlay({
           zIndex: 14,
         }}
       />
-
-      {/* Time Label */}
+      
+      {/* Debug: Small yellow dot at exact calculated position */}
       <div
-        className="absolute bg-yellow-400 border-2 border-black px-1 md:px-2 py-1 text-xs md:text-sm font-black pointer-events-none rounded shadow-lg"
+        className="absolute w-1 h-1 bg-yellow-500 pointer-events-none"
         style={{
-          left: anchorPoint.x - (isMobile ? 20 : 25),
-          top: anchorPoint.y + (isMobile ? 12 : 15),
-          zIndex: 15,
-          boxShadow: "0 0 5px rgba(255, 255, 0, 0.6)",
+          left: anchorPoint.x - 0.5,
+          top: anchorPoint.y - 0.5,
+          zIndex: 25,
         }}
-              >
-          {timeLabel}
-      </div>
+      />
 
-      {/* Price Label at Anchor */}
-      {chartData && (
-        <div
-          className="absolute bg-green-400 border-2 border-black px-1 md:px-2 py-1 text-xs md:text-sm font-black pointer-events-none rounded shadow-lg"
-          style={{
-            left: anchorPoint.x + (isMobile ? 25 : 30),
-            top: anchorPoint.y - (isMobile ? 15 : 18),
-            zIndex: 15,
-            boxShadow: "0 0 5px rgba(0, 255, 0, 0.6)",
-          }}
-                  >
-            ${priceAtStoredTime}
-        </div>
-      )}
+
 
       {/* Dynamic Arrow SVG */}
       <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{ zIndex: 10 }}>
