@@ -18,6 +18,8 @@ interface TradingChartProps {
     priceChange24h: number
     source?: string // Track data source (codex, dexscreener, etc.)
     dataPoints?: number // Number of data points
+    marketCap?: number // Market cap for scaling calculations
+    tokenSupply?: number // Token supply for fallback calculations
   }
   timeframe?: string
   tweetTimestamp?: string
@@ -49,6 +51,21 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
 
         // Use real chart data if available, otherwise fall back to mock data
         const dataToUse = chartData ? convertApiDataToChartData(chartData) : generateMockCandlestickData(tweetTimestamp)
+        
+        // Debug: Log price range to ensure we're capturing all spikes
+        if (chartData?.prices) {
+          const minPrice = Math.min(...chartData.prices)
+          const maxPrice = Math.max(...chartData.prices)
+          console.log(`📊 Price range: $${minPrice.toFixed(8)} to $${maxPrice.toFixed(8)} (${((maxPrice/minPrice - 1) * 100).toFixed(1)}% range)`)
+          console.log(`📊 Data points: ${chartData.prices.length}`)
+          
+          // Log market cap range if available
+          if (chartData.marketCap && chartData.currentPrice) {
+            const minMarketCap = chartData.marketCap * (minPrice / chartData.currentPrice)
+            const maxMarketCap = chartData.marketCap * (maxPrice / chartData.currentPrice)
+            console.log(`💰 Market cap range: $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
+          }
+        }
 
         // Prepare chart options
         const chartOptions: any = {
@@ -100,6 +117,37 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
               type: "linear",
               display: true,
               position: "right",
+              // Add better scaling for extreme variance
+              beginAtZero: false, // Don't force zero to allow better range utilization
+              // Explicitly set min/max to capture full price range including extreme spikes
+              min: function(context: any) {
+                try {
+                  const data = context.chart.data.datasets[0].data
+                  if (!data || data.length === 0) return undefined
+                  const minPrice = Math.min(...data.filter((val: number) => val > 0)) // Filter out zero/negative values
+                  const buffer = minPrice * 0.05 // 5% buffer
+                  const result = Math.max(minPrice - buffer, minPrice * 0.9) // Don't go below 90% of min
+                  console.log(`📊 Y-axis min: $${result.toFixed(8)} (original: $${minPrice.toFixed(8)})`)
+                  return result
+                } catch (e) {
+                  console.warn('Error calculating Y-axis min:', e)
+                  return undefined
+                }
+              },
+              max: function(context: any) {
+                try {
+                  const data = context.chart.data.datasets[0].data
+                  if (!data || data.length === 0) return undefined
+                  const maxPrice = Math.max(...data)
+                  const buffer = maxPrice * 0.05 // 5% buffer
+                  const result = maxPrice + buffer
+                  console.log(`📊 Y-axis max: $${result.toFixed(8)} (original: $${maxPrice.toFixed(8)})`)
+                  return result
+                } catch (e) {
+                  console.warn('Error calculating Y-axis max:', e)
+                  return undefined
+                }
+              },
               grid: {
                 color: "#333333",
               },
@@ -109,6 +157,9 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                   size: window.innerWidth < 768 ? 10 : 12,
                   weight: "bold",
                 },
+                // Increase tick count for better granularity with extreme variance
+                maxTicksLimit: window.innerWidth < 768 ? 8 : 12,
+                stepSize: undefined, // Let Chart.js auto-calculate for optimal spacing
                 // Format as market cap - use real marketcap but scale proportionally with price
                 callback: function(value: any): string {
                   const realMarketCap = (chartData as any)?.marketCap
@@ -129,14 +180,36 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                     marketCap = value * 1000000000
                   }
                   
+                  // Enhanced formatting for extreme variance - more granular display
                   if (marketCap >= 1000000000) {
-                    return `$${(marketCap / 1000000000).toFixed(1)}B`
-                  } else if (marketCap >= 1000000) {
+                    return `$${(marketCap / 1000000000).toFixed(2)}B`
+                  } else if (marketCap >= 100000000) {
+                    // 100M+ - show one decimal
                     return `$${(marketCap / 1000000).toFixed(1)}M`
-                  } else if (marketCap >= 1000) {
+                  } else if (marketCap >= 10000000) {
+                    // 10M+ - show one decimal
+                    return `$${(marketCap / 1000000).toFixed(1)}M`
+                  } else if (marketCap >= 1000000) {
+                    // 1M+ - show two decimals for more precision
+                    return `$${(marketCap / 1000000).toFixed(2)}M`
+                  } else if (marketCap >= 100000) {
+                    // 100K+ - show one decimal
                     return `$${(marketCap / 1000).toFixed(1)}K`
-                  } else {
+                  } else if (marketCap >= 10000) {
+                    // 10K+ - show one decimal
+                    return `$${(marketCap / 1000).toFixed(1)}K`
+                  } else if (marketCap >= 1000) {
+                    // 1K+ - show two decimals for precision
+                    return `$${(marketCap / 1000).toFixed(2)}K`
+                  } else if (marketCap >= 100) {
+                    // $100+ - show whole dollars
                     return `$${marketCap.toFixed(0)}`
+                  } else if (marketCap >= 1) {
+                    // $1+ - show two decimals
+                    return `$${marketCap.toFixed(2)}`
+                  } else {
+                    // Under $1 - show more decimals
+                    return `$${marketCap.toFixed(4)}`
                   }
                 }
               },
