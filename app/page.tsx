@@ -46,6 +46,7 @@ export default function TweetChartAnchor() {
   const [chartData, setChartData] = useState<ChartData | undefined>()
   const [apiChartData, setApiChartData] = useState<any>(undefined)
   const [fetchedTweetData, setFetchedTweetData] = useState<TweetData | null>(null)
+  const [generationId, setGenerationId] = useState(0)
   const chartContainerRef = useRef<HTMLDivElement>(null)
   const chartCardRef = useRef<HTMLDivElement>(null)
 
@@ -89,6 +90,7 @@ export default function TweetChartAnchor() {
       // Store the fetched data
       setApiChartData(chartDataResult)
       setFetchedTweetData(tweetDataResult)
+      setGenerationId(prev => prev + 1) // Increment to force chart re-render
 
       setIsGenerated(true)
     } catch (error) {
@@ -339,17 +341,19 @@ export default function TweetChartAnchor() {
 
 
                 <div className="space-y-2">
-                  <Label htmlFor="timeframe" className="font-bold text-base md:text-lg">
-                    Chart Timeframe
-                  </Label>
+                              <Label htmlFor="timeframe" className="font-bold text-base md:text-lg">
+              Chart Interval
+            </Label>
                   <select
                     id="timeframe"
                     value={timeframe}
-                    onChange={(e) => {
-                      setTimeframe(e.target.value)
+                    onChange={async (e) => {
+                      const newTimeframe = e.target.value
+                      setTimeframe(newTimeframe)
                       // Auto-generate when timeframe changes if chart is already generated
-                      if (isGenerated) {
-                        handleGenerate()
+                      if (isGenerated && chartUrl && tweetUrl) {
+                        console.log(`🔄 Auto-generating chart for new interval: ${newTimeframe}`)
+                        await handleGenerate()
                       }
                     }}
                     className="w-full border-2 border-black font-bold text-base md:text-lg p-3 bg-white"
@@ -422,7 +426,7 @@ export default function TweetChartAnchor() {
                     onTouchEnd={handleTouchEnd}
                   >
                     <TradingChart
-                      key={`chart-${apiChartData?.symbol || "default"}-${timeframe}-${tweetData.timestamp}`}
+                      key={`chart-${apiChartData?.symbol || "default"}-${timeframe}-${generationId}`}
                       tokenPair={apiChartData?.symbol || "Loading..."}
                       chartData={apiChartData}
                       timeframe={timeframe}
