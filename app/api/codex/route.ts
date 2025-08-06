@@ -183,6 +183,7 @@ export async function GET(request: NextRequest) {
       currencyCode: 'USD',
       removeLeadingNullValues: true, // Remove leading nulls as recommended
       removeEmptyBars: true, // Remove gaps for low-activity tokens
+      statsType: 'UNFILTERED', // Use UNFILTERED to capture extreme spikes and outliers
       // Note: Not using countback here as it would override our time range
       symbolType: isProbablyPairAddress ? 'POOL' : 'TOKEN'
     }
@@ -407,20 +408,22 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
   }
   
   // Resolution mapping for Codex API with fallbacks for unsupported resolutions
+  // Using highest resolution possible to capture ALL spikes across all intervals
   const resolutionMap: Record<string, { primary: string; fallback: string }> = {
-    '5m': { primary: '5', fallback: '15' },      // 5 minutes, fallback to 15m
-    '15m': { primary: '15', fallback: '60' },    // 15 minutes, fallback to 1h
-    '1h': { primary: '60', fallback: '240' },    // 1 hour, fallback to 4h
-    '4h': { primary: '240', fallback: '1D' },    // 4 hours, fallback to 1D
-    '6h': { primary: '240', fallback: '1D' },    // Use 4h for 6h (6h might not be supported)
-    '1d': { primary: '1D', fallback: '240' },    // 1 day, fallback to 4h
-    '1w': { primary: '7D', fallback: '1D' }      // 1 week (7 days), fallback to 1D
+    '5m': { primary: '1', fallback: '5' },       // 1 minute for maximum spike capture
+    '15m': { primary: '1', fallback: '5' },      // 1 minute for maximum spike capture  
+    '1h': { primary: '5', fallback: '15' },      // 5 minutes for high resolution
+    '4h': { primary: '15', fallback: '60' },     // 15 minutes for detailed capture
+    '6h': { primary: '15', fallback: '60' },     // 15 minutes for detailed capture
+    '1d': { primary: '60', fallback: '240' },    // 1 hour for comprehensive coverage
+    '1w': { primary: '240', fallback: '1D' }     // 4 hours for weekly view with spike capture
   }
   
   const resolutionConfig = resolutionMap[timeframe] || { primary: '60', fallback: '240' }
   const resolution = resolutionConfig.primary
   
-  console.log(`📊 Using resolution: ${resolution} for timeframe: ${timeframe} (fallback: ${resolutionConfig.fallback})`)
+  console.log(`📊 Using HIGH-RESOLUTION: ${resolution} for timeframe: ${timeframe} (fallback: ${resolutionConfig.fallback})`)
+  console.log(`🎯 Spike capture mode: UNFILTERED stats + HIGH prices + ${resolution}-minute resolution`)
   
   // Time range calculation - center around tweet time or use recent data
   let from: number, to: number
@@ -491,9 +494,10 @@ function formatCodexResponse(barsData: CodexBarsResponse, displaySymbol: string 
   const dataLength = barsData.o.length
   
   for (let i = 0; i < dataLength; i++) {
-    // Use closing price for the line chart, fallback to opening price
-    const closePrice = barsData.c[i] || barsData.o[i] || 0
-    prices.push(closePrice)
+    // Use high price to capture spikes, fallback to close, then open
+    // This ensures we capture the peak of any brief spikes that might be missed with close prices
+    const highPrice = barsData.h[i] || barsData.c[i] || barsData.o[i] || 0
+    prices.push(highPrice)
     
     // Convert volume from string to number
     const volumeStr = barsData.volume?.[i] || '0'
@@ -510,7 +514,14 @@ function formatCodexResponse(barsData: CodexBarsResponse, displaySymbol: string 
   const price24hAgo = prices.length > 24 ? prices[prices.length - 24] : prices[0]
   const priceChange24h = price24hAgo ? ((currentPrice - price24hAgo) / price24hAgo) * 100 : 0
   
-  console.log(`📈 Formatted ${dataLength} bars: price range $${Math.min(...prices).toFixed(6)} - $${Math.max(...prices).toFixed(6)}`)
+  // Enhanced debugging for price range analysis
+  const minPrice = Math.min(...prices)
+  const maxPrice = Math.max(...prices)
+  const priceVariance = ((maxPrice / minPrice - 1) * 100).toFixed(1)
+  
+  console.log(`📈 Formatted ${dataLength} bars: price range $${minPrice.toFixed(8)} - $${maxPrice.toFixed(8)} (${priceVariance}% variance)`)
+  console.log(`📊 High prices array (first 10):`, barsData.h?.slice(0, 10)?.map(h => `$${h.toFixed(8)}`))
+  console.log(`🔥 Maximum high price in dataset: $${Math.max(...(barsData.h || []))?.toFixed(8)}`)
   
   return {
     symbol: `${displaySymbol}/USD`,
