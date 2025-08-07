@@ -52,28 +52,102 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
         // Use real chart data if available, otherwise fall back to mock data
         const dataToUse = chartData ? convertApiDataToChartData(chartData) : generateMockCandlestickData(tweetTimestamp)
         
-        // Debug: Log price range to ensure we're capturing all spikes
-        if (chartData?.prices) {
-          const minPrice = Math.min(...chartData.prices)
-          const maxPrice = Math.max(...chartData.prices)
-          console.log(`📊 Price range: $${minPrice.toFixed(8)} to $${maxPrice.toFixed(8)} (${((maxPrice/minPrice - 1) * 100).toFixed(1)}% range)`)
-          console.log(`📊 Data points: ${chartData.prices.length}`)
-          
-          // Log market cap range if available
-          console.log(`🔍 Market cap data check: marketCap=${chartData.marketCap ? '$' + chartData.marketCap.toLocaleString() : 'undefined'}, currentPrice=${chartData.currentPrice ? '$' + chartData.currentPrice.toFixed(8) : 'undefined'}, tokenSupply=${chartData.tokenSupply ? chartData.tokenSupply.toLocaleString() : 'undefined'}`)
-          
-          // Use token supply for more accurate historical market cap calculation
-          if (chartData.tokenSupply) {
-            const minMarketCap = minPrice * chartData.tokenSupply
-            const maxMarketCap = maxPrice * chartData.tokenSupply
-            console.log(`💰 Market cap range (token supply): $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
-          } else if (chartData.marketCap && chartData.currentPrice) {
-            const minMarketCap = chartData.marketCap * (minPrice / chartData.currentPrice)
-            const maxMarketCap = chartData.marketCap * (maxPrice / chartData.currentPrice)
-            console.log(`💰 Market cap range (scaled): $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
-          } else {
-            console.warn(`⚠️ Missing market cap data - cannot calculate accurate market cap range for Y-axis`)
+        // Helper function for timeframe calculations - MUCH more restrictive windows
+        const getTimeframeInMs = (tf: string): number => {
+          switch (tf) {
+            case "5m": return 4 * 60 * 60 * 1000      // 4 hours total for 5min candles
+            case "15m": return 12 * 60 * 60 * 1000    // 12 hours total for 15min candles  
+            case "1h": return 24 * 60 * 60 * 1000     // 24 hours total for 1h candles
+            case "4h": return 4 * 24 * 60 * 60 * 1000 // 4 days total for 4h candles
+            case "6h": return 5 * 24 * 60 * 60 * 1000 // 5 days total for 6h candles
+            case "1d": return 14 * 24 * 60 * 60 * 1000 // 14 days total for daily candles
+            case "1w": return 14 * 24 * 60 * 60 * 1000 // 14 days total for weekly candles (2 weeks centered)
+            default: return 24 * 60 * 60 * 1000
           }
+        }
+        
+        // Calculate price range from the actual filtered timeframe data (not full dataset)
+        let timeframeMinPrice: number | undefined = undefined
+        let timeframeMaxPrice: number | undefined = undefined
+        
+        if (chartData?.prices && chartData?.timestamps && tweetTimestamp) {
+          // Filter data to only include points within a reasonable window around the tweet
+          const tweetTime = new Date(tweetTimestamp).getTime()
+          const timeframeMs = getTimeframeInMs(timeframe)
+          const windowStart = tweetTime - (timeframeMs / 2)
+          const windowEnd = tweetTime + (timeframeMs / 2)
+          
+          // Filter ALL chart data to only include data within the display window
+          const filteredPrices: number[] = []
+          const filteredTimestamps: string[] = []
+          const filteredVolumes: number[] = []
+          
+          chartData.timestamps.forEach((timestamp, index) => {
+            const dataTime = new Date(timestamp).getTime()
+            const price = chartData!.prices[index]
+            const volume = chartData!.volumes?.[index] || 0
+            const isInWindow = dataTime >= windowStart && dataTime <= windowEnd
+            const isValidPrice = price > 0
+            
+            if (isInWindow && isValidPrice) {
+              filteredPrices.push(price)
+              filteredTimestamps.push(timestamp)
+              filteredVolumes.push(volume)
+            }
+            
+            // Debug: Log first few data points to see what's happening
+            if (index < 5) {
+              console.log(`📊 Data point ${index}: ${timestamp} (${new Date(timestamp).toLocaleDateString()}) -> $${price.toFixed(8)} | inWindow: ${isInWindow}, validPrice: ${isValidPrice}`)
+            }
+          })
+          
+          console.log(`📊 Filtering data: ${chartData.prices.length} total points -> ${filteredPrices.length} points within ${timeframe} window`)
+          console.log(`📊 Time window: ${new Date(windowStart).toISOString()} to ${new Date(windowEnd).toISOString()}`)
+          
+          if (filteredPrices.length > 0) {
+            // Replace the original chartData with filtered data so Chart.js only displays the filtered points
+            chartData = {
+              ...chartData,
+              prices: filteredPrices,
+              timestamps: filteredTimestamps,
+              volumes: filteredVolumes
+            }
+            
+            timeframeMinPrice = Math.min(...filteredPrices)
+            timeframeMaxPrice = Math.max(...filteredPrices)
+            console.log(`📊 Price range (window filtered): $${timeframeMinPrice.toFixed(8)} to $${timeframeMaxPrice.toFixed(8)} (${((timeframeMaxPrice/timeframeMinPrice - 1) * 100).toFixed(1)}% range)`)
+            console.log(`📊 Filtered data points: ${filteredPrices.length}`)
+            console.log(`🔄 Replaced chartData with filtered data - Chart.js will now only display ${filteredPrices.length} points`)
+            
+            // Debug: Show the actual minimum price found and when it occurred
+            const minIndex = filteredPrices.indexOf(timeframeMinPrice)
+            const minTimestamp = filteredTimestamps[minIndex]
+            console.log(`📊 Minimum price $${timeframeMinPrice.toFixed(8)} found at: ${minTimestamp} (${new Date(minTimestamp).toLocaleDateString()})`)
+            
+            // Debug: Show a few of the lowest prices to understand the range
+            const sortedPrices = [...filteredPrices].sort((a, b) => a - b)
+            console.log(`📊 Lowest 3 prices in filtered data: $${sortedPrices[0]?.toFixed(8)}, $${sortedPrices[1]?.toFixed(8)}, $${sortedPrices[2]?.toFixed(8)}`)
+            
+            // Use token supply for more accurate historical market cap calculation
+            if (chartData.tokenSupply) {
+              const minMarketCap = timeframeMinPrice * chartData.tokenSupply
+              const maxMarketCap = timeframeMaxPrice * chartData.tokenSupply
+              console.log(`💰 Market cap range (window filtered): $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
+            } else if (chartData.marketCap && chartData.currentPrice) {
+              const minMarketCap = chartData.marketCap * (timeframeMinPrice / chartData.currentPrice)
+              const maxMarketCap = chartData.marketCap * (timeframeMaxPrice / chartData.currentPrice)
+              console.log(`💰 Market cap range (window filtered): $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
+            }
+          } else {
+            // Fallback to original data if filtering results in no data
+            timeframeMinPrice = Math.min(...chartData.prices)
+            timeframeMaxPrice = Math.max(...chartData.prices)
+            console.warn(`⚠️ No data within time window, using full dataset range`)
+            console.log(`📊 Price range (fallback): $${timeframeMinPrice.toFixed(8)} to $${timeframeMaxPrice.toFixed(8)}`)
+          }
+          
+          // Log market cap data check
+          console.log(`🔍 Market cap data check: marketCap=${chartData.marketCap ? '$' + chartData.marketCap.toLocaleString() : 'undefined'}, currentPrice=${chartData.currentPrice ? '$' + chartData.currentPrice.toFixed(8) : 'undefined'}, tokenSupply=${chartData.tokenSupply ? chartData.tokenSupply.toLocaleString() : 'undefined'}`)
         }
 
         // Prepare chart options
@@ -128,34 +202,38 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
               position: "right",
               // Add better scaling for extreme variance
               beginAtZero: false, // Don't force zero to allow better range utilization
-              // Explicitly set min/max to capture full price range including extreme spikes
-              min: function(context: any) {
-                try {
-                  const data = context.chart.data.datasets[0].data
-                  if (!data || data.length === 0) return undefined
-                  const minPrice = Math.min(...data.filter((val: number) => val > 0)) // Filter out zero/negative values
-                  const buffer = minPrice * 0.05 // 5% buffer
-                  const result = Math.max(minPrice - buffer, minPrice * 0.9) // Don't go below 90% of min
-                  console.log(`📊 Y-axis min: $${result.toFixed(8)} (original: $${minPrice.toFixed(8)})`)
-                  return result
-                } catch (e) {
-                  console.warn('Error calculating Y-axis min:', e)
-                  return undefined
-                }
+              // Use pre-calculated timeframe-filtered min/max (not full dataset)
+              min: timeframeMinPrice ? (() => {
+                const buffer = timeframeMinPrice * 0.05 // 5% buffer
+                const result = Math.max(timeframeMinPrice - buffer, timeframeMinPrice * 0.9) // Don't go below 90% of min
+                console.log(`📊 Y-axis min (PRE-CALCULATED from filtered data): $${result.toFixed(8)} (filtered min: $${timeframeMinPrice.toFixed(8)})`)
+                return result
+              })() : function(context: any) {
+                // Fallback if no filtered data available
+                console.warn(`⚠️ Using Chart.js dataset fallback for Y-axis min`)
+                const data = context.chart.data.datasets[0].data
+                if (!data || data.length === 0) return undefined
+                const minPrice = Math.min(...data.filter((val: number) => val > 0))
+                const buffer = minPrice * 0.05
+                const result = Math.max(minPrice - buffer, minPrice * 0.9)
+                console.log(`📊 Y-axis min (FALLBACK): $${result.toFixed(8)} (dataset min: $${minPrice.toFixed(8)})`)
+                return result
               },
-              max: function(context: any) {
-                try {
-                  const data = context.chart.data.datasets[0].data
-                  if (!data || data.length === 0) return undefined
-                  const maxPrice = Math.max(...data)
-                  const buffer = maxPrice * 0.05 // 5% buffer
-                  const result = maxPrice + buffer
-                  console.log(`📊 Y-axis max: $${result.toFixed(8)} (original: $${maxPrice.toFixed(8)})`)
-                  return result
-                } catch (e) {
-                  console.warn('Error calculating Y-axis max:', e)
-                  return undefined
-                }
+              max: timeframeMaxPrice ? (() => {
+                const buffer = timeframeMaxPrice * 0.05 // 5% buffer
+                const result = timeframeMaxPrice + buffer
+                console.log(`📊 Y-axis max (PRE-CALCULATED from filtered data): $${result.toFixed(8)} (filtered max: $${timeframeMaxPrice.toFixed(8)})`)
+                return result
+              })() : function(context: any) {
+                // Fallback if no filtered data available
+                console.warn(`⚠️ Using Chart.js dataset fallback for Y-axis max`)
+                const data = context.chart.data.datasets[0].data
+                if (!data || data.length === 0) return undefined
+                const maxPrice = Math.max(...data)
+                const buffer = maxPrice * 0.05
+                const result = maxPrice + buffer
+                console.log(`📊 Y-axis max (FALLBACK): $${result.toFixed(8)} (dataset max: $${maxPrice.toFixed(8)})`)
+                return result
               },
               grid: {
                 color: "#333333",
@@ -395,6 +473,20 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
     return { labels, prices, volumes, timeData }
   }
 
+  // Helper function for timeframe calculations - MUCH more restrictive windows
+  const getTimeframeInMsHelper = (tf: string): number => {
+    switch (tf) {
+      case "5m": return 4 * 60 * 60 * 1000      // 4 hours total for 5min candles
+      case "15m": return 12 * 60 * 60 * 1000    // 12 hours total for 15min candles  
+      case "1h": return 24 * 60 * 60 * 1000     // 24 hours total for 1h candles
+      case "4h": return 4 * 24 * 60 * 60 * 1000 // 4 days total for 4h candles
+      case "6h": return 5 * 24 * 60 * 60 * 1000 // 5 days total for 6h candles
+      case "1d": return 14 * 24 * 60 * 60 * 1000 // 14 days total for daily candles
+      case "1w": return 14 * 24 * 60 * 60 * 1000 // 14 days total for weekly candles (2 weeks centered)
+      default: return 24 * 60 * 60 * 1000
+    }
+  }
+
   const generateMockCandlestickData = (tweetTimestamp?: string) => {
     const labels: string[] = []
     const prices: number[] = []
@@ -417,18 +509,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
       }
     }
 
-    const getTimeframeInMs = (tf: string): number => {
-      switch (tf) {
-        case "5m": return 4 * 60 * 60 * 1000    // 4 hours total for 5min candles
-        case "15m": return 24 * 60 * 60 * 1000   // 24 hours total for 15min candles
-        case "1h": return 24 * 60 * 60 * 1000    // 24 hours total for 1h candles
-        case "4h": return 7 * 24 * 60 * 60 * 1000  // 7 days total for 4h candles
-        case "6h": return 7 * 24 * 60 * 60 * 1000  // 7 days total for 6h candles
-        case "1d": return 30 * 24 * 60 * 60 * 1000 // 30 days total for daily candles
-        case "1w": return 90 * 24 * 60 * 60 * 1000 // 90 days total for weekly candles
-        default: return 24 * 60 * 60 * 1000
-      }
-    }
+
 
     const intervalMs = getIntervalMs(timeframe)
 
@@ -442,7 +523,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
     }
 
     // Calculate timeline to center the tweet in the middle of the visible timeframe
-    const timeframeMs = getTimeframeInMs(timeframe)
+    const timeframeMs = getTimeframeInMsHelper(timeframe)
     const halfTimeframe = timeframeMs / 2
     const startTime = new Date(centerTime.getTime() - halfTimeframe)
     const endTime = new Date(centerTime.getTime() + halfTimeframe)
