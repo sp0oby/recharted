@@ -523,18 +523,23 @@ function formatCodexResponse(barsData: CodexBarsResponse, displaySymbol: string 
   console.log(`📊 High prices array (first 10):`, barsData.h?.slice(0, 10)?.map(h => `$${h.toFixed(8)}`))
   console.log(`🔥 Maximum high price in dataset: $${Math.max(...(barsData.h || []))?.toFixed(8)}`)
   
-  return {
+  const finalMarketCap = marketCap || (currentPrice && tokenSupply ? currentPrice * tokenSupply : undefined)
+  const response = {
     symbol: `${displaySymbol}/USD`,
     prices,
     volumes,
     timestamps,
     currentPrice,
     priceChange24h,
-    marketCap: marketCap || (currentPrice && tokenSupply ? currentPrice * tokenSupply : undefined),
+    marketCap: finalMarketCap,
     tokenSupply,
     source: 'codex',
     dataPoints: dataLength
   }
+  
+  console.log(`📤 API Response: marketCap=${finalMarketCap ? '$' + finalMarketCap.toLocaleString() : 'undefined'}, currentPrice=$${currentPrice.toFixed(8)}, tokenSupply=${tokenSupply ? tokenSupply.toLocaleString() : 'undefined'}`)
+  
+  return response
 }
 
 // Helper function to execute GraphQL query using direct HTTP fetch (as per Codex docs)
