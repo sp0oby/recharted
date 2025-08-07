@@ -146,12 +146,23 @@ export default function TweetOverlay({
     })
 
     // Now look for the EARLIEST point of a significant price movement around the tweet time
-    // Search in a window around the closest time point
-    const searchWindowSize = Math.min(10, Math.floor(chartData.timeData.length / 4)) // Search up to 10 points or 25% of data
-    const searchStart = Math.max(0, closestIndex - searchWindowSize)
-    const searchEnd = Math.min(chartData.timeData.length - 1, closestIndex + searchWindowSize)
+    // Search in a larger window, especially forward (since spikes often happen AFTER tweets)
+    const backwardWindow = Math.min(5, Math.floor(chartData.timeData.length / 8)) // Look back 5 points
+    const forwardWindow = Math.min(20, Math.floor(chartData.timeData.length / 3)) // Look forward 20 points or 33% of data
+    const searchStart = Math.max(0, closestIndex - backwardWindow)
+    const searchEnd = Math.min(chartData.timeData.length - 1, closestIndex + forwardWindow)
     
     console.log(`🔍 Searching for spike start from index ${searchStart} to ${searchEnd} (around tweet index ${closestIndex})`)
+    
+    // Debug: Show price range in search window and full dataset
+    const searchWindowPrices = chartData.prices.slice(searchStart, searchEnd + 1)
+    const minInWindow = Math.min(...searchWindowPrices.filter(p => p > 0))
+    const maxInWindow = Math.max(...searchWindowPrices)
+    const maxInFullDataset = Math.max(...chartData.prices)
+    
+    console.log(`🔍 Search window price range: $${minInWindow.toFixed(8)} - $${maxInWindow.toFixed(8)}`)
+    console.log(`🔍 Full dataset max price: $${maxInFullDataset.toFixed(8)}`)
+    console.log(`⚠️ Is max in search window? ${maxInWindow === maxInFullDataset ? 'YES' : 'NO - spike might be outside window!'}`)
     
     // Look for significant price movements (spikes up or down) in the search window
     let maxPriceChange = 0
