@@ -60,10 +60,19 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
           console.log(`📊 Data points: ${chartData.prices.length}`)
           
           // Log market cap range if available
-          if (chartData.marketCap && chartData.currentPrice) {
+          console.log(`🔍 Market cap data check: marketCap=${chartData.marketCap ? '$' + chartData.marketCap.toLocaleString() : 'undefined'}, currentPrice=${chartData.currentPrice ? '$' + chartData.currentPrice.toFixed(8) : 'undefined'}, tokenSupply=${chartData.tokenSupply ? chartData.tokenSupply.toLocaleString() : 'undefined'}`)
+          
+          // Use token supply for more accurate historical market cap calculation
+          if (chartData.tokenSupply) {
+            const minMarketCap = minPrice * chartData.tokenSupply
+            const maxMarketCap = maxPrice * chartData.tokenSupply
+            console.log(`💰 Market cap range (token supply): $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
+          } else if (chartData.marketCap && chartData.currentPrice) {
             const minMarketCap = chartData.marketCap * (minPrice / chartData.currentPrice)
             const maxMarketCap = chartData.marketCap * (maxPrice / chartData.currentPrice)
-            console.log(`💰 Market cap range: $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
+            console.log(`💰 Market cap range (scaled): $${minMarketCap.toLocaleString()} to $${maxMarketCap.toLocaleString()}`)
+          } else {
+            console.warn(`⚠️ Missing market cap data - cannot calculate accurate market cap range for Y-axis`)
           }
         }
 
@@ -166,18 +175,39 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                   const tokenSupply = (chartData as any)?.tokenSupply
                   const currentPrice = (chartData as any)?.currentPrice
                   
+                  // Debug: Log what data we have for market cap calculation
+                  if (!realMarketCap && !tokenSupply) {
+                    console.warn(`⚠️ Y-axis callback missing data: marketCap=${realMarketCap}, tokenSupply=${tokenSupply}, currentPrice=${currentPrice}, value=${value}`)
+                  }
+                  
                   let marketCap: number
                   
-                  if (realMarketCap && currentPrice) {
-                    // Use real marketcap as baseline, scale proportionally with current price level
+                  // Prioritize token supply method for accurate historical market caps
+                  if (tokenSupply) {
+                    // Primary method: calculate from token supply (most reliable for historical spikes)
+                    marketCap = value * tokenSupply
+                    
+                    // Debug: Log token supply calculation for high values
+                    if (marketCap > 10000000) { // Log if calculated MC > $10M
+                      console.log(`💰 HIGH Market Cap (token supply): $${marketCap.toLocaleString()} (price: $${value.toFixed(8)}, supply: ${tokenSupply.toLocaleString()})`)
+                    }
+                  } else if (realMarketCap && currentPrice) {
+                    // Fallback: Use real marketcap as baseline, scale proportionally with current price level
                     // Formula: realMarketCap * (currentPriceLevel / actualCurrentPrice)
                     marketCap = realMarketCap * (value / currentPrice)
-                  } else if (tokenSupply) {
-                    // Fallback: calculate from token supply
-                    marketCap = value * tokenSupply
+                    
+                    // Debug: Log the calculation for extreme values
+                    if (marketCap > realMarketCap * 10) { // Log if calculated MC is >10x the baseline
+                      console.log(`💰 HIGH Market Cap (scaled): $${marketCap.toLocaleString()} (price: $${value.toFixed(8)}, baseline MC: $${realMarketCap.toLocaleString()}, current price: $${currentPrice.toFixed(8)})`)
+                    }
                   } else {
                     // Last resort: assume 1B supply for display purposes
                     marketCap = value * 1000000000
+                    
+                    // Debug: Log fallback calculation for high values
+                    if (marketCap > 10000000) { // Log if calculated MC > $10M
+                      console.log(`💰 HIGH Market Cap (1B fallback): $${marketCap.toLocaleString()} (price: $${value.toFixed(8)})`)
+                    }
                   }
                   
                   // Enhanced formatting for extreme variance - more granular display
