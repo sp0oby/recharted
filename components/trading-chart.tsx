@@ -62,6 +62,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
             case "6h": return 5 * 24 * 60 * 60 * 1000 // 5 days total for 6h candles
             case "1d": return 14 * 24 * 60 * 60 * 1000 // 14 days total for daily candles
             case "1w": return 14 * 24 * 60 * 60 * 1000 // 14 days total for weekly candles (2 weeks centered)
+            case "1m": return 90 * 24 * 60 * 60 * 1000 // 90 days total for monthly candles (3 months: 2 before tweet + 1 current)
             default: return 24 * 60 * 60 * 1000
           }
         }
@@ -184,13 +185,31 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                   const labels = dataToUse.labels
                   if (labels && labels[index]) {
                     // Show fewer labels for cleaner display
-                    if (timeframe === "1d") {
-                      return index % 3 === 0 ? labels[index] : ""
-                    } else if (timeframe === "4h" || timeframe === "6h") {
-                      return index % 2 === 0 ? labels[index] : ""
-                    } else {
-                      return index % 3 === 0 ? labels[index] : ""
-                    }
+                                if (timeframe === "1d") {
+              return index % 3 === 0 ? labels[index] : ""
+            } else if (timeframe === "4h" || timeframe === "6h") {
+              return index % 2 === 0 ? labels[index] : ""
+            } else if (timeframe === "1m") {
+              // For monthly, show first label, month changes, and last label
+              if (index === 0) return labels[index]
+              
+              const currentLabel = labels[index]
+              const prevLabel = labels[index - 1]
+              
+              // Show label if it's different from the previous one (month changed)
+              if (currentLabel && prevLabel && currentLabel !== prevLabel) {
+                return currentLabel
+              }
+              
+              // Also show the last label to ensure current month is visible
+              if (index === labels.length - 1) {
+                return labels[index]
+              }
+              
+              return ""
+            } else {
+              return index % 3 === 0 ? labels[index] : ""
+            }
                   }
                   return ""
                 }
@@ -422,6 +441,12 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
           month: "short",
           day: "numeric",
         })
+      } else if (timeframe === "1m") {
+        // For monthly, show month and year
+        timeString = date.toLocaleDateString("en-US", {
+          month: "short",
+          year: "numeric",
+        })
       } else if (timeframe === "1d") {
         // For daily, show date only (no time, no year for consistency)
         timeString = date.toLocaleDateString("en-US", {
@@ -483,6 +508,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
       case "6h": return 5 * 24 * 60 * 60 * 1000 // 5 days total for 6h candles
       case "1d": return 14 * 24 * 60 * 60 * 1000 // 14 days total for daily candles
       case "1w": return 14 * 24 * 60 * 60 * 1000 // 14 days total for weekly candles (2 weeks centered)
+      case "1m": return 90 * 24 * 60 * 60 * 1000 // 90 days total for monthly candles (3 months: 2 before tweet + 1 current)
       default: return 24 * 60 * 60 * 1000
     }
   }
@@ -505,6 +531,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
         case "6h": return 6 * 60 * 60 * 1000
         case "1d": return 24 * 60 * 60 * 1000
         case "1w": return 7 * 24 * 60 * 60 * 1000
+        case "1m": return 7 * 24 * 60 * 60 * 1000
         default: return 60 * 60 * 1000
       }
     }
@@ -543,6 +570,11 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
         timeString = time.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
+        })
+      } else if (timeframe === "1m") {
+        timeString = time.toLocaleDateString("en-US", {
+          month: "short",
+          year: "numeric",
         })
       } else if (timeframe === "4h" || timeframe === "6h") {
         timeString = time.toLocaleDateString("en-US", {
