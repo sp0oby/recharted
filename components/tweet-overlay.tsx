@@ -70,6 +70,7 @@ export default function TweetOverlay({
   }, [])
 
   useEffect(() => {
+    console.log(`🔍 TweetOverlay useEffect triggered - timeframe: ${timeframe}, chartData exists: ${!!chartData}, chartInstance exists: ${!!chartData?.chartInstance}`)
     if (chartContainerRef.current && chartData && chartData.chartInstance) {
       // Use Chart.js internal chart area for precise positioning
       const chart = chartData.chartInstance
@@ -118,7 +119,13 @@ export default function TweetOverlay({
     console.log(`🕐 Tweet time in local: ${inputDateTime.toLocaleString()}`)
     console.log(`🕐 Tweet time in UTC: ${inputDateTime.toISOString()}`)
     
-    console.log(`📊 Available time data points:`, chartData.timeData.slice(0, 5).map(d => ({
+    console.log(`📊 Available time data points (first 5):`, chartData.timeData.slice(0, 5).map(d => ({
+      time: d.time,
+      timestamp: new Date(d.timestamp).toISOString(),
+      localTime: new Date(d.timestamp).toLocaleString(),
+      price: d.price
+    })))
+    console.log(`📊 Available time data points (last 5):`, chartData.timeData.slice(-5).map(d => ({
       time: d.time,
       timestamp: new Date(d.timestamp).toISOString(),
       localTime: new Date(d.timestamp).toLocaleString(),
@@ -145,55 +152,71 @@ export default function TweetOverlay({
       }
     })
 
-    // Now look for the EARLIEST point of a significant price movement around the tweet time
-    // Search in a larger window, especially forward (since spikes often happen AFTER tweets)
-    const backwardWindow = Math.min(5, Math.floor(chartData.timeData.length / 8)) // Look back 5 points
-    const forwardWindow = Math.min(20, Math.floor(chartData.timeData.length / 3)) // Look forward 20 points or 33% of data
-    const searchStart = Math.max(0, closestIndex - backwardWindow)
-    const searchEnd = Math.min(chartData.timeData.length - 1, closestIndex + forwardWindow)
-    
-    console.log(`🔍 Searching for spike start from index ${searchStart} to ${searchEnd} (around tweet index ${closestIndex})`)
-    
-    // Debug: Show price range in search window and full dataset
-    const searchWindowPrices = chartData.prices.slice(searchStart, searchEnd + 1)
-    const minInWindow = Math.min(...searchWindowPrices.filter(p => p > 0))
-    const maxInWindow = Math.max(...searchWindowPrices)
-    const maxInFullDataset = Math.max(...chartData.prices)
-    
-    console.log(`🔍 Search window price range: $${minInWindow.toFixed(8)} - $${maxInWindow.toFixed(8)}`)
-    console.log(`🔍 Full dataset max price: $${maxInFullDataset.toFixed(8)}`)
-    console.log(`⚠️ Is max in search window? ${maxInWindow === maxInFullDataset ? 'YES' : 'NO - spike might be outside window!'}`)
-    
-    // Look for significant price movements (spikes up or down) in the search window
-    let maxPriceChange = 0
-    let spikeStartIndex = closestIndex
-    
-    for (let i = searchStart; i < searchEnd - 1; i++) {
-      const currentPrice = chartData.prices[i]
-      const nextPrice = chartData.prices[i + 1]
+    // For monthly interval, skip spike detection and use exact timestamp match
+    if (timeframe === '1m') {
+      anchorIndex = closestIndex
+      spikeDetected = false // Monthly never has spike detection
+      console.log(`📅 Monthly interval: using exact timestamp match, skipping spike detection`)
+      console.log(`📍 Selected anchor index: ${closestIndex} out of ${chartData.timeData.length} data points`)
+      console.log(`📍 Selected timestamp: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
+      console.log(`📍 Selected local time: ${new Date(chartData.timeData[closestIndex].timestamp).toLocaleString()}`)
+      console.log(`⏰ Time difference from tweet: ${Math.abs(new Date(chartData.timeData[closestIndex].timestamp).getTime() - inputDateTime.getTime()) / (1000 * 60 * 60)} hours`)
+    } else {
+      // Now look for the EARLIEST point of a significant price movement around the tweet time
+      // Search in a larger window, especially forward (since spikes often happen AFTER tweets)
+      const backwardWindow = Math.min(5, Math.floor(chartData.timeData.length / 8)) // Look back 5 points
+      const forwardWindow = Math.min(20, Math.floor(chartData.timeData.length / 3)) // Look forward 20 points or 33% of data
+      const searchStart = Math.max(0, closestIndex - backwardWindow)
+      const searchEnd = Math.min(chartData.timeData.length - 1, closestIndex + forwardWindow)
       
-      if (currentPrice && nextPrice) {
-        const priceChange = Math.abs((nextPrice - currentPrice) / currentPrice)
+      console.log(`🔍 Searching for spike start from index ${searchStart} to ${searchEnd} (around tweet index ${closestIndex})`)
+      
+      // Debug: Show price range in search window and full dataset
+      const searchWindowPrices = chartData.prices.slice(searchStart, searchEnd + 1)
+      const minInWindow = Math.min(...searchWindowPrices.filter(p => p > 0))
+      const maxInWindow = Math.max(...searchWindowPrices)
+      const maxInFullDataset = Math.max(...chartData.prices)
+      
+      console.log(`🔍 Search window price range: $${minInWindow.toFixed(8)} - $${maxInWindow.toFixed(8)}`)
+      console.log(`🔍 Full dataset max price: $${maxInFullDataset.toFixed(8)}`)
+      console.log(`⚠️ Is max in search window? ${maxInWindow === maxInFullDataset ? 'YES' : 'NO - spike might be outside window!'}`)
+      
+      // Look for significant price movements (spikes up or down) in the search window
+      let maxPriceChange = 0
+      let spikeStartIndex = closestIndex
+      
+      for (let i = searchStart; i < searchEnd - 1; i++) {
+        const currentPrice = chartData.prices[i]
+        const nextPrice = chartData.prices[i + 1]
         
-        // Look for significant movements (>5% for high sensitivity to capture more spikes)
-        if (priceChange > 0.05 && priceChange > maxPriceChange) {
-          maxPriceChange = priceChange
-          spikeStartIndex = i // This is the START of the movement (before the change)
-          spikeDetected = true
+        if (currentPrice && nextPrice) {
+          const priceChange = Math.abs((nextPrice - currentPrice) / currentPrice)
+          
+          // Look for significant movements (>5% for high sensitivity to capture more spikes)
+          if (priceChange > 0.05 && priceChange > maxPriceChange) {
+            maxPriceChange = priceChange
+            spikeStartIndex = i // This is the START of the movement (before the change)
+            spikeDetected = true
+          }
         }
       }
-    }
-    
-    // Use spike start if detected, otherwise use closest time
-    anchorIndex = spikeDetected ? spikeStartIndex : closestIndex
-    
-    if (spikeDetected) {
-      console.log(`🚀 Spike detected! ${(maxPriceChange * 100).toFixed(1)}% movement starting at index ${spikeStartIndex}`)
-      console.log(`📍 Anchoring at SPIKE START: ${new Date(chartData.timeData[spikeStartIndex].timestamp).toISOString()}`)
-      console.log(`💰 Price at spike start: $${chartData.prices[spikeStartIndex]?.toFixed(8)}`)
-      console.log(`💰 Price after movement: $${chartData.prices[spikeStartIndex + 1]?.toFixed(8)}`)
-    } else {
-      console.log(`📍 No significant spike detected, using closest time match at index ${closestIndex}`)
+      
+      // Use spike start if detected, otherwise use closest time
+      anchorIndex = spikeDetected ? spikeStartIndex : closestIndex
+      
+      // Log results for non-monthly intervals
+      if (spikeDetected) {
+        console.log(`🚀 Spike detected! ${(maxPriceChange * 100).toFixed(1)}% movement starting at index ${spikeStartIndex}`)
+        console.log(`📍 Anchoring at SPIKE START: ${new Date(chartData.timeData[spikeStartIndex].timestamp).toISOString()}`)
+        console.log(`📍 Spike start local time: ${new Date(chartData.timeData[spikeStartIndex].timestamp).toLocaleString()}`)
+        console.log(`💰 Price at spike start: $${chartData.prices[spikeStartIndex]?.toFixed(8)}`)
+        console.log(`💰 Price after movement: $${chartData.prices[spikeStartIndex + 1]?.toFixed(8)}`)
+      } else {
+        console.log(`📍 No significant spike detected, using closest time match at index ${closestIndex}`)
+        console.log(`📍 Closest match timestamp: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
+        console.log(`📍 Closest match local time: ${new Date(chartData.timeData[closestIndex].timestamp).toLocaleString()}`)
+        console.log(`⏰ Time difference: ${minDifference / (1000 * 60)} minutes`)
+      }
     }
     
     // Check if the tweet timestamp is outside the available data range
@@ -204,17 +227,37 @@ export default function TweetOverlay({
     // Adjust tolerance based on timeframe - weekly needs much larger tolerance due to sparse data
     const isShortTimeframe = timeframe && ['5m', '15m', '1h'].includes(timeframe)
     const isWeeklyTimeframe = timeframe === '1w'
+    const isMonthlyTimeframe = timeframe === '1m'
     
     let toleranceMs: number
     if (isShortTimeframe) {
       toleranceMs = 15 * 60 * 1000 // 15 minutes for short timeframes
     } else if (isWeeklyTimeframe) {
       toleranceMs = 7 * 24 * 60 * 60 * 1000 // 7 days for weekly timeframe (much larger tolerance)
+    } else if (isMonthlyTimeframe) {
+      toleranceMs = 30 * 24 * 60 * 60 * 1000 // 30 days for monthly timeframe (largest tolerance)
     } else {
       toleranceMs = 30 * 60 * 1000 // 30 minutes for medium timeframes (4h, 6h, 1d)
     }
     
-    const isOutsideRange = tweetTime < dataStart || tweetTime > dataEnd
+    // For monthly interval, if tweet is within the same day as the last data point, don't treat it as outside range
+    let isOutsideRange: boolean
+    if (isMonthlyTimeframe) {
+      const dataEndDate = new Date(dataEnd)
+      const tweetDate = new Date(tweetTime)
+      const sameDay = dataEndDate.toDateString() === tweetDate.toDateString()
+      
+      if (sameDay && tweetTime > dataEnd) {
+        // Tweet is on the same day as last data point but later in the day - this is fine for monthly
+        isOutsideRange = false
+        console.log(`📅 Monthly: Tweet is on same day as last data point (${dataEndDate.toDateString()}), treating as in-range`)
+      } else {
+        isOutsideRange = tweetTime < dataStart || tweetTime > dataEnd
+      }
+    } else {
+      isOutsideRange = tweetTime < dataStart || tweetTime > dataEnd
+    }
+    
     const isLargeDifference = minDifference > toleranceMs
     
     // Center anchor if tweet is outside data range or time difference exceeds tolerance
