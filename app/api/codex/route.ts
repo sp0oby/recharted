@@ -416,7 +416,8 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
     '4h': { primary: '15', fallback: '60' },     // 15 minutes for detailed capture
     '6h': { primary: '15', fallback: '60' },     // 15 minutes for detailed capture
     '1d': { primary: '60', fallback: '240' },    // 1 hour for comprehensive coverage
-    '1w': { primary: '240', fallback: '1D' }     // 4 hours for weekly view with spike capture
+    '1w': { primary: '240', fallback: '1D' },    // 4 hours for weekly view with spike capture
+    '1m': { primary: '1D', fallback: '7D' }      // 1 day for monthly view with comprehensive coverage
   }
   
   const resolutionConfig = resolutionMap[timeframe] || { primary: '60', fallback: '240' }
@@ -429,26 +430,35 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
   let from: number, to: number
   
   if (tweetTimestamp) {
-    // Center the chart around the tweet time with improved ranges for better anchor visibility
-    const timeRanges: Record<string, number> = {
-      '5m': 3 * 60 * 60 * 1000,      // 3 hours total (1.5h before/after tweet)
-      '15m': 8 * 60 * 60 * 1000,     // 8 hours total (4h before/after tweet)
-      '1h': 16 * 60 * 60 * 1000,     // 16 hours total (8h before/after tweet)
-      '4h': 5 * 24 * 60 * 60 * 1000, // 5 days total (2.5d before/after tweet)
-      '6h': 8 * 24 * 60 * 60 * 1000, // 8 days total (4d before/after tweet)
-      '1d': 30 * 24 * 60 * 60 * 1000, // 30 days total (15d before/after tweet)
-      '1w': 90 * 24 * 60 * 60 * 1000  // 90 days total (45d before/after tweet)
+    // For monthly interval, show 2 months before tweet timestamp up to present
+    if (timeframe === '1m') {
+      const monthsBeforeTweet = 60 * 24 * 60 * 60 * 1000 // 2 months before tweet
+      from = Math.floor((tweetTime - monthsBeforeTweet) / 1000)
+      to = Math.floor(now / 1000)
+      console.log(`📅 Monthly chart: showing 2 months before tweet (${new Date(tweetTime).toISOString()}) up to present`)
+      console.log(`📅 Time range: ${new Date(from * 1000).toISOString()} to ${new Date(to * 1000).toISOString()}`)
+    } else {
+      // Center the chart around the tweet time with improved ranges for better anchor visibility
+      const timeRanges: Record<string, number> = {
+        '5m': 3 * 60 * 60 * 1000,      // 3 hours total (1.5h before/after tweet)
+        '15m': 8 * 60 * 60 * 1000,     // 8 hours total (4h before/after tweet)
+        '1h': 16 * 60 * 60 * 1000,     // 16 hours total (8h before/after tweet)
+        '4h': 5 * 24 * 60 * 60 * 1000, // 5 days total (2.5d before/after tweet)
+        '6h': 8 * 24 * 60 * 60 * 1000, // 8 days total (4d before/after tweet)
+        '1d': 30 * 24 * 60 * 60 * 1000, // 30 days total (15d before/after tweet)
+        '1w': 90 * 24 * 60 * 60 * 1000  // 90 days total (45d before/after tweet)
+      }
+      
+      const totalRange = timeRanges[timeframe] || 16 * 60 * 60 * 1000
+      const halfRange = totalRange / 2
+      
+      // Ensure exact centering around tweet time
+      from = Math.floor((tweetTime - halfRange) / 1000)
+      to = Math.floor((tweetTime + halfRange) / 1000)
+      
+      console.log(`⚖️ Centering chart: tweet at ${new Date(tweetTime).toISOString()}, range: ${totalRange/1000/60/60}h total`)
+      console.log(`📅 Time range: ${new Date(from * 1000).toISOString()} to ${new Date(to * 1000).toISOString()}`)
     }
-    
-    const totalRange = timeRanges[timeframe] || 16 * 60 * 60 * 1000
-    const halfRange = totalRange / 2
-    
-    // Ensure exact centering around tweet time
-    from = Math.floor((tweetTime - halfRange) / 1000)
-    to = Math.floor((tweetTime + halfRange) / 1000)
-    
-    console.log(`⚖️ Centering chart: tweet at ${new Date(tweetTime).toISOString()}, range: ${totalRange/1000/60/60}h total`)
-    console.log(`📅 Time range: ${new Date(from * 1000).toISOString()} to ${new Date(to * 1000).toISOString()}`)
   } else {
     // Use recent data ending at current time
     const timeRanges: Record<string, number> = {
@@ -458,7 +468,8 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
       '4h': 30 * 24 * 60 * 60 * 1000, // Last 30 days
       '6h': 30 * 24 * 60 * 60 * 1000, // Last 30 days
       '1d': 90 * 24 * 60 * 60 * 1000, // Last 90 days
-      '1w': 365 * 24 * 60 * 60 * 1000 // Last 365 days (1 year)
+      '1w': 365 * 24 * 60 * 60 * 1000, // Last 365 days (1 year)
+      '1m': 365 * 24 * 60 * 60 * 1000 // Last 365 days (1 year)
     }
     
     const range = timeRanges[timeframe] || 24 * 60 * 60 * 1000
