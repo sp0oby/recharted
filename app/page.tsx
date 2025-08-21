@@ -365,6 +365,7 @@ export default function TweetChartAnchor() {
                     <option value="6h">6 Hours</option>
                     <option value="1d">1 Day</option>
                     <option value="1w">1 Week</option>
+                    <option value="1m">1 Month</option>
                   </select>
                 </div>
               </CardContent>
