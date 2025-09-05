@@ -1,8 +1,16 @@
 "use client"
 
 import type React from "react"
-
 import { useState, useEffect } from "react"
+
+// Import Libre Franklin font
+import { Libre_Franklin } from 'next/font/google'
+
+const libreFranklin = Libre_Franklin({
+  subsets: ['latin'],
+  weight: ['400', '600', '700', '900'],
+  display: 'swap',
+})
 
 interface TweetData {
   username: string
@@ -152,131 +160,30 @@ export default function TweetOverlay({
       }
     })
 
-    // For monthly interval, skip spike detection and use exact timestamp match
-    if (timeframe === '1m') {
-      anchorIndex = closestIndex
-      spikeDetected = false // Monthly never has spike detection
-      console.log(`📅 Monthly interval: using exact timestamp match, skipping spike detection`)
-      console.log(`📍 Selected anchor index: ${closestIndex} out of ${chartData.timeData.length} data points`)
-      console.log(`📍 Selected timestamp: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
-      console.log(`📍 Selected local time: ${new Date(chartData.timeData[closestIndex].timestamp).toLocaleString()}`)
-      console.log(`⏰ Time difference from tweet: ${Math.abs(new Date(chartData.timeData[closestIndex].timestamp).getTime() - inputDateTime.getTime()) / (1000 * 60 * 60)} hours`)
-    } else {
-      // Now look for the EARLIEST point of a significant price movement around the tweet time
-      // Search in a larger window, especially forward (since spikes often happen AFTER tweets)
-      const backwardWindow = Math.min(5, Math.floor(chartData.timeData.length / 8)) // Look back 5 points
-      const forwardWindow = Math.min(20, Math.floor(chartData.timeData.length / 3)) // Look forward 20 points or 33% of data
-      const searchStart = Math.max(0, closestIndex - backwardWindow)
-      const searchEnd = Math.min(chartData.timeData.length - 1, closestIndex + forwardWindow)
-      
-      console.log(`🔍 Searching for spike start from index ${searchStart} to ${searchEnd} (around tweet index ${closestIndex})`)
-      
-      // Debug: Show price range in search window and full dataset
-      const searchWindowPrices = chartData.prices.slice(searchStart, searchEnd + 1)
-      const minInWindow = Math.min(...searchWindowPrices.filter(p => p > 0))
-      const maxInWindow = Math.max(...searchWindowPrices)
-      const maxInFullDataset = Math.max(...chartData.prices)
-      
-      console.log(`🔍 Search window price range: $${minInWindow.toFixed(8)} - $${maxInWindow.toFixed(8)}`)
-      console.log(`🔍 Full dataset max price: $${maxInFullDataset.toFixed(8)}`)
-      console.log(`⚠️ Is max in search window? ${maxInWindow === maxInFullDataset ? 'YES' : 'NO - spike might be outside window!'}`)
-      
-      // Look for significant price movements (spikes up or down) in the search window
-      let maxPriceChange = 0
-      let spikeStartIndex = closestIndex
-      
-      for (let i = searchStart; i < searchEnd - 1; i++) {
-        const currentPrice = chartData.prices[i]
-        const nextPrice = chartData.prices[i + 1]
-        
-        if (currentPrice && nextPrice) {
-          const priceChange = Math.abs((nextPrice - currentPrice) / currentPrice)
-          
-          // Look for significant movements (>5% for high sensitivity to capture more spikes)
-          if (priceChange > 0.05 && priceChange > maxPriceChange) {
-            maxPriceChange = priceChange
-            spikeStartIndex = i // This is the START of the movement (before the change)
-            spikeDetected = true
-          }
-        }
-      }
-      
-      // Use spike start if detected, otherwise use closest time
-      anchorIndex = spikeDetected ? spikeStartIndex : closestIndex
-      
-      // Log results for non-monthly intervals
-      if (spikeDetected) {
-        console.log(`🚀 Spike detected! ${(maxPriceChange * 100).toFixed(1)}% movement starting at index ${spikeStartIndex}`)
-        console.log(`📍 Anchoring at SPIKE START: ${new Date(chartData.timeData[spikeStartIndex].timestamp).toISOString()}`)
-        console.log(`📍 Spike start local time: ${new Date(chartData.timeData[spikeStartIndex].timestamp).toLocaleString()}`)
-        console.log(`💰 Price at spike start: $${chartData.prices[spikeStartIndex]?.toFixed(8)}`)
-        console.log(`💰 Price after movement: $${chartData.prices[spikeStartIndex + 1]?.toFixed(8)}`)
-      } else {
-        console.log(`📍 No significant spike detected, using closest time match at index ${closestIndex}`)
-        console.log(`📍 Closest match timestamp: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
-        console.log(`📍 Closest match local time: ${new Date(chartData.timeData[closestIndex].timestamp).toLocaleString()}`)
-        console.log(`⏰ Time difference: ${minDifference / (1000 * 60)} minutes`)
-      }
-    }
+    // Always use exact timestamp match - no spike detection or special rules
+    anchorIndex = closestIndex
+    spikeDetected = false
+    console.log(`🎯 Using exact timestamp match for all timeframes`)
+    console.log(`📍 Selected anchor index: ${closestIndex} out of ${chartData.timeData.length} data points`)
+    console.log(`📍 Selected timestamp: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
+    console.log(`📍 Selected local time: ${new Date(chartData.timeData[closestIndex].timestamp).toLocaleString()}`)
+    console.log(`⏰ Time difference from tweet: ${Math.abs(new Date(chartData.timeData[closestIndex].timestamp).getTime() - inputDateTime.getTime()) / 1000} seconds`)
     
     // Check if the tweet timestamp is outside the available data range
     const dataStart = chartData.timeData[0]?.timestamp
     const dataEnd = chartData.timeData[chartData.timeData.length - 1]?.timestamp
     const tweetTime = inputDateTime.getTime()
     
-    // Adjust tolerance based on timeframe - weekly needs much larger tolerance due to sparse data
-    const isShortTimeframe = timeframe && ['5m', '15m', '1h'].includes(timeframe)
-    const isWeeklyTimeframe = timeframe === '1w'
-    const isMonthlyTimeframe = timeframe === '1m'
+    // Only use center fallback if tweet is WAY outside data range (more than 1 year)
+    const oneYearMs = 365 * 24 * 60 * 60 * 1000
+    const isWayOutsideRange = (tweetTime < dataStart - oneYearMs) || (tweetTime > dataEnd + oneYearMs)
     
-    let toleranceMs: number
-    if (isShortTimeframe) {
-      toleranceMs = 15 * 60 * 1000 // 15 minutes for short timeframes
-    } else if (isWeeklyTimeframe) {
-      toleranceMs = 7 * 24 * 60 * 60 * 1000 // 7 days for weekly timeframe (much larger tolerance)
-    } else if (isMonthlyTimeframe) {
-      toleranceMs = 30 * 24 * 60 * 60 * 1000 // 30 days for monthly timeframe (largest tolerance)
-    } else {
-      toleranceMs = 30 * 60 * 1000 // 30 minutes for medium timeframes (4h, 6h, 1d)
-    }
-    
-    // For monthly interval, if tweet is within the same day as the last data point, don't treat it as outside range
-    let isOutsideRange: boolean
-    if (isMonthlyTimeframe) {
-      const dataEndDate = new Date(dataEnd)
-      const tweetDate = new Date(tweetTime)
-      const sameDay = dataEndDate.toDateString() === tweetDate.toDateString()
-      
-      if (sameDay && tweetTime > dataEnd) {
-        // Tweet is on the same day as last data point but later in the day - this is fine for monthly
-        isOutsideRange = false
-        console.log(`📅 Monthly: Tweet is on same day as last data point (${dataEndDate.toDateString()}), treating as in-range`)
-      } else {
-        isOutsideRange = tweetTime < dataStart || tweetTime > dataEnd
-      }
-    } else {
-      isOutsideRange = tweetTime < dataStart || tweetTime > dataEnd
-    }
-    
-    const isLargeDifference = minDifference > toleranceMs
-    
-    // Center anchor if tweet is outside data range or time difference exceeds tolerance
-    // Tolerance: 15min (short), 30min (medium), 7 days (weekly)
-    if (isOutsideRange || isLargeDifference) {
+    if (isWayOutsideRange) {
       anchorIndex = Math.floor(chartData.timeData.length / 2)
       usingCenterFallback = true
-      
-      if (isOutsideRange) {
-        console.log(`⚖️ Tweet outside data range, using center of chart at index ${anchorIndex}`)
-        console.log(`📊 Data range: ${new Date(dataStart).toISOString()} to ${new Date(dataEnd).toISOString()}`)
-        console.log(`🎯 Tweet time: ${inputDateTime.toISOString()} - centering anchor`)
-      } else {
-        const timeDiffHours = Math.round(minDifference / (60 * 60 * 1000))
-        const timeDiffMinutes = Math.round(minDifference / (60 * 1000))
-        const displayDiff = timeDiffHours > 1 ? `${timeDiffHours}h` : `${timeDiffMinutes}min`
-        console.log(`⚖️ Large time difference detected (${displayDiff}) for ${timeframe}, using center at index ${anchorIndex}`)
-        console.log(`📏 Tolerance for ${timeframe}: ${isWeeklyTimeframe ? '7 days' : isShortTimeframe ? '15min' : '30min'}`)
-      }
+      console.log(`⚖️ Tweet WAY outside data range (>1 year), using center of chart at index ${anchorIndex}`)
+      console.log(`📊 Data range: ${new Date(dataStart).toISOString()} to ${new Date(dataEnd).toISOString()}`)
+      console.log(`🎯 Tweet time: ${inputDateTime.toISOString()} - centering anchor`)
     }
     
     // For debugging: always show the time difference
@@ -318,7 +225,67 @@ export default function TweetOverlay({
     console.log(`Canvas offset: (${canvasOffsetX}, ${canvasOffsetY})`)
     console.log(`Chart area: left=${chartArea.left}, top=${chartArea.top}, right=${chartArea.right}, bottom=${chartArea.bottom}`)
     
-    // Try Chart.js metadata first
+    // Calculate exact position using interpolation between data points
+    let exactX: number
+    let exactY: number
+    
+    if (!usingCenterFallback && chartData.timeData.length > 1) {
+      // Find the two data points to interpolate between
+      const tweetTimestamp = inputDateTime.getTime()
+      let beforeIndex = -1
+      let afterIndex = -1
+      
+      // Find the data points immediately before and after the tweet time
+      for (let i = 0; i < chartData.timeData.length - 1; i++) {
+        const currentTime = chartData.timeData[i].timestamp
+        const nextTime = chartData.timeData[i + 1].timestamp
+        
+        if (tweetTimestamp >= currentTime && tweetTimestamp <= nextTime) {
+          beforeIndex = i
+          afterIndex = i + 1
+          break
+        }
+      }
+      
+      // If we found bracketing points, interpolate between them
+      if (beforeIndex >= 0 && afterIndex >= 0) {
+        const beforeTime = chartData.timeData[beforeIndex].timestamp
+        const afterTime = chartData.timeData[afterIndex].timestamp
+        const beforePrice = chartData.prices[beforeIndex]
+        const afterPrice = chartData.prices[afterIndex]
+        
+        // Calculate interpolation factor (0 = exactly at before point, 1 = exactly at after point)
+        const timeFactor = (tweetTimestamp - beforeTime) / (afterTime - beforeTime)
+        
+        // Get pixel positions for the bracketing points
+        const metaData = chart.getDatasetMeta(0)
+        if (metaData?.data?.[beforeIndex] && metaData?.data?.[afterIndex]) {
+          const beforePoint = metaData.data[beforeIndex]
+          const afterPoint = metaData.data[afterIndex]
+          
+          // Interpolate X position based on time
+          exactX = beforePoint.x + (afterPoint.x - beforePoint.x) * timeFactor
+          
+          // Interpolate Y position based on price
+          const interpolatedPrice = beforePrice + (afterPrice - beforePrice) * timeFactor
+          const yScale = chart.scales.y
+          exactY = yScale.getPixelForValue(interpolatedPrice)
+          
+          console.log(`🎯 EXACT INTERPOLATION: Tweet at ${new Date(tweetTimestamp).toISOString()}`)
+          console.log(`📍 Between points: ${new Date(beforeTime).toISOString()} and ${new Date(afterTime).toISOString()}`)
+          console.log(`📊 Time factor: ${timeFactor.toFixed(4)} (0=before, 1=after)`)
+          console.log(`💰 Interpolated price: $${interpolatedPrice.toFixed(8)}`)
+          console.log(`📍 Exact position: (${exactX.toFixed(2)}, ${exactY.toFixed(2)})`)
+          
+          const adjustedX = exactX + canvasOffsetX
+          const adjustedY = exactY + canvasOffsetY
+          
+          return { x: adjustedX, y: adjustedY }
+        }
+      }
+    }
+    
+    // Fallback: Try Chart.js metadata for closest point
     const metaData = chart.getDatasetMeta(0)
     if (metaData && metaData.data && metaData.data[anchorIndex]) {
       const point = metaData.data[anchorIndex]
@@ -330,7 +297,7 @@ export default function TweetOverlay({
       }
     }
 
-    // Fallback: use scale calculations with canvas offset
+    // Final fallback: use scale calculations with canvas offset
     const xScale = chart.scales.x
     const yScale = chart.scales.y
     const scaleX = xScale.getPixelForValue(anchorIndex)
@@ -453,7 +420,7 @@ export default function TweetOverlay({
       <div
         className={`absolute bg-white border-1 sm:border-4 border-black rounded p-1 sm:p-2 md:p-3 ${tweetWidth} min-h-fit shadow-[1px_1px_0px_0px_#000000] sm:shadow-[4px_4px_0px_0px_#000000] md:shadow-[6px_6px_0px_0px_#000000] ${
           isDragging ? "cursor-grabbing scale-105" : "cursor-grab"
-        } select-none transition-transform duration-150`}
+        } select-none transition-transform duration-150 ${libreFranklin.className}`}
         style={{
           left: position.x,
           top: position.y,
@@ -480,19 +447,19 @@ export default function TweetOverlay({
               className="w-4 h-4 sm:w-8 sm:h-8 md:w-10 md:h-10 rounded-full border-1 sm:border-2 border-black object-cover"
             />
           ) : (
-            <div className="w-4 h-4 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-gray-300 rounded-full border-1 sm:border-2 border-black flex items-center justify-center font-black text-xs">
+            <div className="w-4 h-4 sm:w-8 sm:h-8 md:w-10 md:h-10 bg-gray-300 rounded-full border-1 sm:border-2 border-black flex items-center justify-center font-semibold text-xs">
               {tweetData.username.charAt(0).toUpperCase()}
             </div>
           )}
           <div className="min-w-0 flex-1">
-            <div className="font-black text-xs sm:text-sm md:text-base break-words leading-tight">{tweetData.username}</div>
-            <div className="text-gray-600 font-bold text-xs break-words leading-tight">{tweetData.handle}</div>
+            <div className="font-semibold text-xs sm:text-sm md:text-base break-words leading-tight">{tweetData.username}</div>
+            <div className="text-gray-600 font-normal text-xs break-words leading-tight">{tweetData.handle}</div>
           </div>
         </div>
 
         {/* Tweet Content */}
         <div className="mb-1 sm:mb-2 md:mb-3">
-          <p className="text-xs sm:text-sm md:text-base font-bold leading-relaxed sm:leading-tight break-words"
+          <p className="text-xs sm:text-sm md:text-base font-normal leading-relaxed sm:leading-tight break-words"
              style={{
                wordWrap: 'break-word',
                overflowWrap: 'break-word'
@@ -500,7 +467,7 @@ export default function TweetOverlay({
         </div>
 
         {/* Tweet Metadata - Hide on mobile to save space */}
-        <div className="hidden sm:block text-xs text-gray-600 font-bold mb-1 sm:mb-2">
+        <div className="hidden sm:block text-xs text-gray-600 font-normal mb-1 sm:mb-2">
           {new Date(tweetData.timestamp).toLocaleDateString("en-US", { 
             month: "short", 
             day: "numeric", 
