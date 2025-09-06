@@ -308,7 +308,10 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                   }
                   
                   // Enhanced formatting for extreme variance - more granular display
-                  if (marketCap >= 1000000000) {
+                  if (marketCap >= 1000000000000) {
+                    // Trillion scale - for major cryptocurrencies like Bitcoin, Ethereum
+                    return `$${(marketCap / 1000000000000).toFixed(2)}T`
+                  } else if (marketCap >= 1000000000) {
                     return `$${(marketCap / 1000000000).toFixed(2)}B`
                   } else if (marketCap >= 100000000) {
                     // 100M+ - show one decimal
