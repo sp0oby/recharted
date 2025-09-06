@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Download, Move, Zap, Copy } from "lucide-react"
 import TradingChart from "@/components/trading-chart"
 import TweetOverlay from "@/components/tweet-overlay"
@@ -34,10 +35,40 @@ interface ChartData {
   chartInstance: any
 }
 
+interface PopularToken {
+  name: string
+  symbol: string
+  address: string
+  network: string
+}
+
+// Popular tokens with their addresses for quick selection
+const POPULAR_TOKENS: PopularToken[] = [
+  {
+    name: "Bitcoin",
+    symbol: "BTC",
+    address: "bitcoin",
+    network: "coingecko"
+  },
+  {
+    name: "Ethereum", 
+    symbol: "ETH",
+    address: "ethereum",
+    network: "coingecko"
+  },
+  {
+    name: "Solana",
+    symbol: "SOL", 
+    address: "solana",
+    network: "coingecko"
+  }
+]
+
 export default function TweetChartAnchor() {
   const { toast } = useToast()
   const [tweetUrl, setTweetUrl] = useState("https://x.com/a1lon9/status/1945238123908067530")
   const [chartUrl, setChartUrl] = useState("pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn")
+  const [selectedToken, setSelectedToken] = useState<string>("")
   const [timeframe, setTimeframe] = useState("1h")
   const [tweetPosition, setTweetPosition] = useState<Position>({ x: 20, y: 20 })
   const [isDragging, setIsDragging] = useState(false)
@@ -58,13 +89,31 @@ export default function TweetChartAnchor() {
     timestamp: new Date().toISOString(),
   }
 
-  const handleGenerate = async () => {
+  const handleTokenSelect = async (tokenAddress: string) => {
+    if (!tokenAddress) return
+    
+    const selectedTokenData = POPULAR_TOKENS.find(token => token.address === tokenAddress)
+    if (selectedTokenData) {
+      setSelectedToken(tokenAddress)
+      setChartUrl(tokenAddress)
+      
+      // Auto-generate chart if tweet URL is already filled
+      if (tweetUrl) {
+        console.log(`🚀 Auto-generating chart for ${selectedTokenData.name} (${selectedTokenData.symbol})`)
+        // Call generate function directly with the new token address
+        await generateChart(tokenAddress)
+      }
+    }
+  }
+
+  const generateChart = async (urlOverride?: string) => {
+    const targetUrl = urlOverride || chartUrl
     setIsLoading(true)
     setChartData(undefined) // Reset chart data
 
     try {
       // Test API first if it's a new URL
-      if (chartUrl !== "https://dexscreener.com/ethereum/0x6982508145454ce325ddbe47a25d4ec3d2311933") {
+      if (targetUrl !== "https://dexscreener.com/ethereum/0x6982508145454ce325ddbe47a25d4ec3d2311933") {
         console.log("Testing DexScreener API...")
         await testDexScreenerAPI()
       }
@@ -74,12 +123,23 @@ export default function TweetChartAnchor() {
       console.log("Fetched tweet data:", tweetDataResult)
       
       // Now fetch chart data with real historical data (CoinGecko -> Birdeye -> Generated)
-      const chartDataResult = await fetchChartDataWithHistory(chartUrl, timeframe, tweetDataResult.timestamp)
+      const chartDataResult = await fetchChartDataWithHistory(targetUrl, timeframe, tweetDataResult.timestamp)
       console.log("Fetched chart data with historical API integration:", chartDataResult)
       
       // Debug marketCap data specifically
       if (chartDataResult.marketCap) {
-        console.log(`💰 Frontend received MarketCap: $${(chartDataResult.marketCap / 1000000).toFixed(2)}M`)
+        const marketCap = chartDataResult.marketCap
+        let formattedMarketCap: string
+        if (marketCap >= 1000000000000) {
+          formattedMarketCap = `$${(marketCap / 1000000000000).toFixed(2)}T`
+        } else if (marketCap >= 1000000000) {
+          formattedMarketCap = `$${(marketCap / 1000000000).toFixed(2)}B`
+        } else if (marketCap >= 1000000) {
+          formattedMarketCap = `$${(marketCap / 1000000).toFixed(2)}M`
+        } else {
+          formattedMarketCap = `$${marketCap.toLocaleString()}`
+        }
+        console.log(`💰 Frontend received MarketCap: ${formattedMarketCap}`)
       } else {
         console.log("⚠️ No marketCap data received from API")
       }
@@ -118,6 +178,10 @@ export default function TweetChartAnchor() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  const handleGenerate = async () => {
+    await generateChart()
   }
 
   const handleChartReady = useCallback((data: ChartData) => {
@@ -323,13 +387,46 @@ export default function TweetChartAnchor() {
                 </div>
 
                 <div className="space-y-2">
+                  <Label htmlFor="popularTokens" className="font-bold text-base md:text-lg">
+                    Popular Tokens
+                  </Label>
+                  <Select value={selectedToken} onValueChange={handleTokenSelect}>
+                    <SelectTrigger className="border-2 border-black font-bold text-base md:text-lg">
+                      <SelectValue placeholder="Bitcoin" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {POPULAR_TOKENS.map((token) => (
+                        <SelectItem key={token.address} value={token.address}>
+                          <div className="flex items-center gap-2">
+                            <span className="font-bold">{token.symbol}</span>
+                            <span className="text-gray-600">{token.name}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="flex items-center gap-2 text-sm text-gray-600">
+                  <div className="flex-1 h-px bg-gray-300"></div>
+                  <span className="font-medium">OR</span>
+                  <div className="flex-1 h-px bg-gray-300"></div>
+                </div>
+
+                <div className="space-y-2">
                   <Label htmlFor="chartUrl" className="font-bold text-base md:text-lg">
                     Token Address or Chart URL
                   </Label>
                   <Input
                     id="chartUrl"
                     value={chartUrl}
-                    onChange={(e) => setChartUrl(e.target.value)}
+                    onChange={(e) => {
+                      setChartUrl(e.target.value)
+                      // Clear selected token when manually typing
+                      if (selectedToken) {
+                        setSelectedToken("")
+                      }
+                    }}
                     className="border-2 border-black font-bold text-base md:text-lg"
                     placeholder="pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn (best) or https://dexscreener.com/..."
                   />
@@ -353,7 +450,7 @@ export default function TweetChartAnchor() {
                       // Auto-generate when timeframe changes if chart is already generated
                       if (isGenerated && chartUrl && tweetUrl) {
                         console.log(`🔄 Auto-generating chart for new interval: ${newTimeframe}`)
-                        await handleGenerate()
+                        await generateChart()
                       }
                     }}
                     className="w-full border-2 border-black font-bold text-base md:text-lg p-3 bg-white"
