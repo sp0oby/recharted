@@ -530,6 +530,7 @@ export default function TweetChartAnchor() {
                       timeframe={timeframe}
                       tweetTimestamp={tweetData.timestamp}
                       onChartReady={handleChartReady}
+                      isPopularToken={apiChartData?.isPopularToken || POPULAR_TOKENS.some(token => token.address === selectedToken)}
                     />
                     <TweetOverlay
                       tweetData={tweetData}
