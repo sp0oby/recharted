@@ -388,18 +388,17 @@ export default function TweetChartAnchor() {
 
                 <div className="space-y-2">
                   <Label htmlFor="popularTokens" className="font-bold text-base md:text-lg">
-                    Popular Tokens
+                    Hotlist Tokens 🔥
                   </Label>
                   <Select value={selectedToken} onValueChange={handleTokenSelect}>
                     <SelectTrigger className="border-2 border-black font-bold text-base md:text-lg">
-                      <SelectValue placeholder="Bitcoin" />
+                      <SelectValue placeholder="Pick from our listed coins" />
                     </SelectTrigger>
                     <SelectContent>
                       {POPULAR_TOKENS.map((token) => (
                         <SelectItem key={token.address} value={token.address}>
                           <div className="flex items-center gap-2">
-                            <span className="font-bold">{token.symbol}</span>
-                            <span className="text-gray-600">{token.name}</span>
+                            <span className="font-bold">${token.symbol}</span>
                           </div>
                         </SelectItem>
                       ))}
@@ -415,11 +414,11 @@ export default function TweetChartAnchor() {
 
                 <div className="space-y-2">
                   <Label htmlFor="chartUrl" className="font-bold text-base md:text-lg">
-                    Token Address or Chart URL
+                    Token Address
                   </Label>
                   <Input
                     id="chartUrl"
-                    value={chartUrl}
+                    value={selectedToken ? "" : chartUrl}
                     onChange={(e) => {
                       setChartUrl(e.target.value)
                       // Clear selected token when manually typing
@@ -427,12 +426,17 @@ export default function TweetChartAnchor() {
                         setSelectedToken("")
                       }
                     }}
-                    className="border-2 border-black font-bold text-base md:text-lg"
-                    placeholder="pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn (best) or https://dexscreener.com/..."
+                    onFocus={() => {
+                      // Clear selected token when input is focused
+                      if (selectedToken) {
+                        setSelectedToken("")
+                      }
+                    }}
+                    className={`border-2 border-black font-bold text-base md:text-lg ${
+                      selectedToken ? 'bg-gray-100 text-gray-500' : ''
+                    }`}
+                    placeholder="BbbwE8rudhjK4husSRc37X..."
                   />
-                  <p className="text-xs text-gray-600 mt-1">
-                    💡 <strong>Tip:</strong> Token addresses work better than DexScreener URLs for accurate data
-                  </p>
                 </div>
 
 
