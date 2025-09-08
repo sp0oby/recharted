@@ -127,20 +127,40 @@ export default function TweetOverlay({
     console.log(`🕐 Tweet time in local: ${inputDateTime.toLocaleString()}`)
     console.log(`🕐 Tweet time in UTC: ${inputDateTime.toISOString()}`)
     
-    console.log(`📊 Available time data points (first 5):`, chartData.timeData.slice(0, 5).map(d => ({
-      time: d.time,
-      timestamp: new Date(d.timestamp).toISOString(),
-      localTime: new Date(d.timestamp).toLocaleString(),
-      price: d.price
-    })))
-    console.log(`📊 Available time data points (last 5):`, chartData.timeData.slice(-5).map(d => ({
-      time: d.time,
-      timestamp: new Date(d.timestamp).toISOString(),
-      localTime: new Date(d.timestamp).toLocaleString(),
-      price: d.price
-    })))
-    console.log(`📅 Chart data range: ${new Date(chartData.timeData[0]?.timestamp).toISOString()} to ${new Date(chartData.timeData[chartData.timeData.length - 1]?.timestamp).toISOString()}`)
-    console.log(`📅 Chart range local: ${new Date(chartData.timeData[0]?.timestamp).toLocaleString()} to ${new Date(chartData.timeData[chartData.timeData.length - 1]?.timestamp).toLocaleString()}`)
+    console.log(`📊 Available time data points (first 5):`, chartData.timeData.slice(0, 5).map(d => {
+      const date = new Date(d.timestamp)
+      return {
+        time: d.time,
+        timestamp: isNaN(date.getTime()) ? 'Invalid Date' : date.toISOString(),
+        localTime: isNaN(date.getTime()) ? 'Invalid Date' : date.toLocaleString(),
+        price: d.price,
+        rawTimestamp: d.timestamp
+      }
+    }))
+    console.log(`📊 Available time data points (last 5):`, chartData.timeData.slice(-5).map(d => {
+      const date = new Date(d.timestamp)
+      return {
+        time: d.time,
+        timestamp: isNaN(date.getTime()) ? 'Invalid Date' : date.toISOString(),
+        localTime: isNaN(date.getTime()) ? 'Invalid Date' : date.toLocaleString(),
+        price: d.price,
+        rawTimestamp: d.timestamp
+      }
+    }))
+    // Validate timestamps before logging
+    const firstTimestamp = chartData.timeData[0]?.timestamp
+    const lastTimestamp = chartData.timeData[chartData.timeData.length - 1]?.timestamp
+    
+    const firstDate = firstTimestamp ? new Date(firstTimestamp) : null
+    const lastDate = lastTimestamp ? new Date(lastTimestamp) : null
+    
+    if (firstDate && !isNaN(firstDate.getTime()) && lastDate && !isNaN(lastDate.getTime())) {
+      console.log(`📅 Chart data range: ${firstDate.toISOString()} to ${lastDate.toISOString()}`)
+      console.log(`📅 Chart range local: ${firstDate.toLocaleString()} to ${lastDate.toLocaleString()}`)
+    } else {
+      console.log('⚠️ Invalid timestamp data detected:', { firstTimestamp, lastTimestamp })
+      console.log('📅 Raw timestamp types:', typeof firstTimestamp, typeof lastTimestamp)
+    }
 
     // Find the EARLIEST point of a significant price movement around the tweet time
     let anchorIndex = 0
@@ -152,6 +172,13 @@ export default function TweetOverlay({
     let closestIndex = 0
     chartData.timeData.forEach((dataPoint, index) => {
       const dataDateTime = new Date(dataPoint.timestamp)
+      
+      // Skip invalid timestamps
+      if (isNaN(dataDateTime.getTime())) {
+        console.warn(`⚠️ Skipping invalid timestamp at index ${index}:`, dataPoint.timestamp)
+        return
+      }
+      
       const difference = Math.abs(dataDateTime.getTime() - inputDateTime.getTime())
 
       if (difference < minDifference) {
@@ -165,25 +192,57 @@ export default function TweetOverlay({
     spikeDetected = false
     console.log(`🎯 Using exact timestamp match for all timeframes`)
     console.log(`📍 Selected anchor index: ${closestIndex} out of ${chartData.timeData.length} data points`)
-    console.log(`📍 Selected timestamp: ${new Date(chartData.timeData[closestIndex].timestamp).toISOString()}`)
-    console.log(`📍 Selected local time: ${new Date(chartData.timeData[closestIndex].timestamp).toLocaleString()}`)
-    console.log(`⏰ Time difference from tweet: ${Math.abs(new Date(chartData.timeData[closestIndex].timestamp).getTime() - inputDateTime.getTime()) / 1000} seconds`)
+    
+    // Validate that the selected index has valid data
+    const selectedDataPoint = chartData.timeData[closestIndex]
+    if (selectedDataPoint && selectedDataPoint.timestamp) {
+      const selectedDate = new Date(selectedDataPoint.timestamp)
+      if (!isNaN(selectedDate.getTime())) {
+        console.log(`📍 Selected timestamp: ${selectedDate.toISOString()}`)
+        console.log(`📍 Selected local time: ${selectedDate.toLocaleString()}`)
+        console.log(`⏰ Time difference from tweet: ${Math.abs(selectedDate.getTime() - inputDateTime.getTime()) / 1000} seconds`)
+      } else {
+        console.error('⚠️ Selected data point has invalid timestamp:', selectedDataPoint.timestamp)
+      }
+    } else {
+      console.error('⚠️ Selected data point is undefined or missing timestamp:', { closestIndex, selectedDataPoint })
+      // Fallback to first valid data point
+      for (let i = 0; i < chartData.timeData.length; i++) {
+        const dataPoint = chartData.timeData[i]
+        if (dataPoint && dataPoint.timestamp && !isNaN(new Date(dataPoint.timestamp).getTime())) {
+          anchorIndex = i
+          closestIndex = i
+          console.log(`🔄 Using fallback anchor index: ${i}`)
+          break
+        }
+      }
+    }
     
     // Check if the tweet timestamp is outside the available data range
     const dataStart = chartData.timeData[0]?.timestamp
     const dataEnd = chartData.timeData[chartData.timeData.length - 1]?.timestamp
     const tweetTime = inputDateTime.getTime()
     
+    // Validate data range timestamps
+    const dataStartTime = dataStart ? new Date(dataStart).getTime() : null
+    const dataEndTime = dataEnd ? new Date(dataEnd).getTime() : null
+    
     // Only use center fallback if tweet is WAY outside data range (more than 1 year)
     const oneYearMs = 365 * 24 * 60 * 60 * 1000
-    const isWayOutsideRange = (tweetTime < dataStart - oneYearMs) || (tweetTime > dataEnd + oneYearMs)
+    let isWayOutsideRange = false
     
-    if (isWayOutsideRange) {
-      anchorIndex = Math.floor(chartData.timeData.length / 2)
-      usingCenterFallback = true
-      console.log(`⚖️ Tweet WAY outside data range (>1 year), using center of chart at index ${anchorIndex}`)
-      console.log(`📊 Data range: ${new Date(dataStart).toISOString()} to ${new Date(dataEnd).toISOString()}`)
-      console.log(`🎯 Tweet time: ${inputDateTime.toISOString()} - centering anchor`)
+    if (dataStartTime && dataEndTime) {
+      isWayOutsideRange = (tweetTime < dataStartTime - oneYearMs) || (tweetTime > dataEndTime + oneYearMs)
+      
+      if (isWayOutsideRange) {
+        anchorIndex = Math.floor(chartData.timeData.length / 2)
+        usingCenterFallback = true
+        console.log(`⚖️ Tweet WAY outside data range (>1 year), using center of chart at index ${anchorIndex}`)
+        console.log(`📊 Data range: ${new Date(dataStartTime).toISOString()} to ${new Date(dataEndTime).toISOString()}`)
+        console.log(`🎯 Tweet time: ${inputDateTime.toISOString()} - centering anchor`)
+      }
+    } else {
+      console.warn('⚠️ Cannot validate data range - invalid start or end timestamps')
     }
     
     // For debugging: always show the time difference
