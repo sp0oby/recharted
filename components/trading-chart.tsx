@@ -23,9 +23,10 @@ interface TradingChartProps {
   }
   timeframe?: string
   tweetTimestamp?: string
+  isPopularToken?: boolean // Flag to show price instead of market cap
 }
 
-export default function TradingChart({ tokenPair, onChartReady, chartData, timeframe = "1h", tweetTimestamp }: TradingChartProps) {
+export default function TradingChart({ tokenPair, onChartReady, chartData, timeframe = "1h", tweetTimestamp, isPopularToken = false }: TradingChartProps) {
   const chartRef = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<Chart | null>(null)
   const hasCalledReady = useRef(false)
@@ -266,8 +267,33 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                 // Increase tick count for better granularity with extreme variance
                 maxTicksLimit: window.innerWidth < 768 ? 8 : 12,
                 stepSize: undefined, // Let Chart.js auto-calculate for optimal spacing
-                // Format as market cap - use real marketcap but scale proportionally with price
+                // Format as either price (for popular tokens) or market cap (for other tokens)
                 callback: function(value: any): string {
+                  // For popular tokens (Bitcoin, Ethereum, Solana), show price instead of market cap
+                  if (isPopularToken) {
+                    const price = value
+                    
+                    // Price formatting for popular tokens
+                    if (price >= 100000) {
+                      return `$${(price / 1000).toFixed(1)}K`
+                    } else if (price >= 10000) {
+                      return `$${(price / 1000).toFixed(2)}K`
+                    } else if (price >= 1000) {
+                      return `$${price.toFixed(0)}`
+                    } else if (price >= 100) {
+                      return `$${price.toFixed(1)}`
+                    } else if (price >= 10) {
+                      return `$${price.toFixed(2)}`
+                    } else if (price >= 1) {
+                      return `$${price.toFixed(3)}`
+                    } else if (price >= 0.01) {
+                      return `$${price.toFixed(4)}`
+                    } else {
+                      return `$${price.toFixed(6)}`
+                    }
+                  }
+                  
+                  // For other tokens, show market cap (existing logic)
                   const realMarketCap = (chartData as any)?.marketCap
                   const tokenSupply = (chartData as any)?.tokenSupply
                   const currentPrice = (chartData as any)?.currentPrice
@@ -345,7 +371,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
               },
               title: {
                 display: true,
-                text: 'Market Cap',
+                text: isPopularToken ? 'Price' : 'Market Cap',
                 color: '#ffffff',
                 font: {
                   size: 14,
