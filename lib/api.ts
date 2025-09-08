@@ -20,6 +20,7 @@ export interface ChartApiResponse {
   tokenSupply?: number
   source?: string // Track data source (dexscreener, codex, etc.)
   dataPoints?: number // Number of data points returned
+  isPopularToken?: boolean // Whether this is a popular token (Bitcoin, Ethereum, Solana)
 }
 
 // Codex API interfaces
@@ -420,25 +421,25 @@ function extractTokenFromUrl(input: string): { symbol?: string; chain?: string; 
   if (input.startsWith('http')) {
     // Parse DexScreener URL
     const urlParts = input.split("/")
-    const chain = urlParts[3] // solana, ethereum, etc.
+  const chain = urlParts[3] // solana, ethereum, etc.
     const address = urlParts[4] // PAIR address (not token address!)
 
     console.log(`Extracted chain: ${chain}, PAIR address: ${address}`)
 
-    // Handle different chain formats
-    let normalizedChain = chain
-    if (chain === "solana") {
-      normalizedChain = "solana"
-    } else if (chain === "ethereum" || chain === "eth") {
-      normalizedChain = "ethereum"
-    }
+  // Handle different chain formats
+  let normalizedChain = chain
+  if (chain === "solana") {
+    normalizedChain = "solana"
+  } else if (chain === "ethereum" || chain === "eth") {
+    normalizedChain = "ethereum"
+  }
 
     // DexScreener URLs typically contain pair addresses (liquidity pool addresses)
     const isPairAddress = address && address.length > 10 // Likely a contract address
 
-    return {
-      chain: normalizedChain,
-      address,
+  return {
+    chain: normalizedChain,
+    address,
       symbol: "PAIR/USD", // Will be determined by API
       isPairAddress: isPairAddress || false, // Ensure boolean type
     }
@@ -524,9 +525,11 @@ export async function fetchCodexChartData(
   }
 }
 
+
 /**
  * Enhanced fetchChartData that tries Codex first, then falls back to DexScreener
- * - Prioritizes real historical data from Codex GraphQL API
+ * - For popular tokens (Bitcoin, Ethereum, Solana): converts to DexScreener URLs and uses Codex
+ * - For other tokens: prioritizes real historical data from Codex GraphQL API
  * - Falls back to DexScreener with generated historical data
  * - Proper timeline centering around tweet timestamps
  */
@@ -535,10 +538,23 @@ export async function fetchChartDataWithHistory(
   timeframe: string,
   tweetTimestamp?: string
 ): Promise<ChartApiResponse> {
-  console.log('🚀 Using enhanced chart data fetching with Codex GraphQL API priority')
+  console.log('🚀 Using enhanced chart data fetching with API priority routing')
   
-  // Extract token info from the chart URL
-  const tokenInfo = extractTokenFromUrl(chartUrl)
+  // Check if this is a popular token - convert to DexScreener URL
+  const popularTokenMap: Record<string, string> = {
+    'bitcoin': 'https://dexscreener.com/ethereum/0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', // WBTC
+    'ethereum': 'https://dexscreener.com/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
+    'solana': 'https://dexscreener.com/ethereum/0xd31a59c85ae9d8edefec411d448f90841571b89c' // SOL
+  }
+  
+  let actualUrl = chartUrl
+  if (popularTokenMap[chartUrl.toLowerCase()]) {
+    actualUrl = popularTokenMap[chartUrl.toLowerCase()]
+    console.log(`🪙 Detected popular token: ${chartUrl} -> using ${actualUrl}`)
+  }
+  
+  // Extract token info from the actual URL (might be converted for popular tokens)
+  const tokenInfo = extractTokenFromUrl(actualUrl)
   
   if (tokenInfo.address && tokenInfo.chain) {
     // Try Codex API first for real historical data
@@ -564,7 +580,10 @@ export async function fetchChartDataWithHistory(
       
       const codexData = await fetchCodexChartData(codexSymbol, timeframe, tweetTimestamp)
       console.log('✅ Successfully retrieved data from Codex API')
-      return codexData
+      return {
+        ...codexData,
+        isPopularToken: popularTokenMap[chartUrl.toLowerCase()] ? true : false
+      }
       
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
@@ -583,12 +602,13 @@ export async function fetchChartDataWithHistory(
   
   // Fallback to existing DexScreener integration
   console.log('🔄 Using DexScreener fallback with generated historical data')
-  const dexScreenerData = await fetchChartData(chartUrl, timeframe, tweetTimestamp)
+  const dexScreenerData = await fetchChartData(actualUrl, timeframe, tweetTimestamp)
   
   // Mark the source as dexscreener for transparency
   return {
     ...dexScreenerData,
-    source: 'dexscreener'
+    source: 'dexscreener',
+    isPopularToken: popularTokenMap[chartUrl.toLowerCase()] ? true : false
   }
 }
 
