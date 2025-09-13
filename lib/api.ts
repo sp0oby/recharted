@@ -540,7 +540,8 @@ export async function fetchChartDataWithHistory(
 ): Promise<ChartApiResponse> {
   console.log('🚀 Using enhanced chart data fetching with API priority routing')
   
-  // Check if this is a popular token - convert to DexScreener URL
+  // Check if this is a major token that should show price instead of market cap
+  // Only BTC, ETH, SOL are mapped here - other hotlist tokens (like PUMP) will show market cap
   const popularTokenMap: Record<string, string> = {
     'bitcoin': 'https://dexscreener.com/ethereum/0x2260fac5e5542a773aa44fbcfedf7c193bc2c599', // WBTC
     'ethereum': 'https://dexscreener.com/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
@@ -590,13 +591,13 @@ export async function fetchChartDataWithHistory(
       
       // Check if this is a tweet timestamp validation error
       if (errorMessage.includes('Tweet Timestamp Issue')) {
-        console.error('🚨 Tweet timestamp validation failed:', errorMessage)
-        // Re-throw this error so it can be handled by the UI
-        throw error
+        console.log('⚠️ Tweet timestamp before token data exists, using DexScreener fallback with current data')
+        console.log('💡 This will show the chart starting from when the token was created, not from the tweet timestamp')
+        // Don't re-throw, fall back to DexScreener instead
+      } else {
+        console.log('⚠️ Codex API failed, falling back to DexScreener:', errorMessage)
+        console.log('💡 This is normal for new/low-volume tokens not yet indexed by Codex. Using DexScreener fallback.')
       }
-      
-      console.log('⚠️ Codex API failed, falling back to DexScreener:', errorMessage)
-      console.log('💡 This is normal for new/low-volume tokens not yet indexed by Codex. Using DexScreener fallback.')
     }
   }
   
