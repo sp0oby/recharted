@@ -40,6 +40,7 @@ interface PopularToken {
   symbol: string
   address: string
   network: string
+  showPrice?: boolean // true for BTC/ETH/SOL, false/undefined for market cap tokens
 }
 
 // Popular tokens with their addresses for quick selection
@@ -48,19 +49,29 @@ const POPULAR_TOKENS: PopularToken[] = [
     name: "Bitcoin",
     symbol: "BTC",
     address: "bitcoin",
-    network: "coingecko"
+    network: "coingecko",
+    showPrice: true // Show price for major tokens
   },
   {
     name: "Ethereum", 
     symbol: "ETH",
     address: "ethereum",
-    network: "coingecko"
+    network: "coingecko",
+    showPrice: true // Show price for major tokens
   },
   {
     name: "Solana",
     symbol: "SOL", 
     address: "solana",
-    network: "coingecko"
+    network: "coingecko",
+    showPrice: true // Show price for major tokens
+  },
+  {
+    name: "PUMP",
+    symbol: "PUMP",
+    address: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
+    network: "solana"
+    // showPrice: false (default) - Show market cap for smaller tokens
   }
 ]
 
@@ -159,10 +170,10 @@ export default function TweetChartAnchor() {
       // Check if this is a tweet timestamp validation error
       if (error instanceof Error && error.message.includes('Tweet Timestamp Issue')) {
         toast({
-          title: "⚠️ Tweet Timestamp Issue",
-          description: error.message.replace('⚠️ Tweet Timestamp Issue: ', ''),
-          variant: "destructive",
-          duration: 8000,
+          title: "⚠️ Tweet Before Token Creation",
+          description: "This tweet was posted before the token existed. Showing chart from token creation date instead.",
+          variant: "default",
+          duration: 6000,
         })
       } else {
         toast({
@@ -534,7 +545,7 @@ export default function TweetChartAnchor() {
                       timeframe={timeframe}
                       tweetTimestamp={tweetData.timestamp}
                       onChartReady={handleChartReady}
-                      isPopularToken={apiChartData?.isPopularToken || POPULAR_TOKENS.some(token => token.address === selectedToken)}
+                      isPopularToken={apiChartData?.isPopularToken || POPULAR_TOKENS.find(token => token.address === selectedToken)?.showPrice || false}
                     />
                     <TweetOverlay
                       tweetData={tweetData}
