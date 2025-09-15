@@ -142,10 +142,12 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
             }
           } else {
             // Fallback to original data if filtering results in no data
+            // This happens when tweet timestamp is far outside the available data range
             timeframeMinPrice = Math.min(...chartData.prices)
             timeframeMaxPrice = Math.max(...chartData.prices)
-            console.warn(`⚠️ No data within time window, using full dataset range`)
+            console.warn(`⚠️ No data within time window (tweet too far from available data), using full dataset range`)
             console.log(`📊 Price range (fallback): $${timeframeMinPrice.toFixed(8)} to $${timeframeMaxPrice.toFixed(8)}`)
+            console.log(`📊 Tweet time: ${new Date(tweetTime).toISOString()}, Data range: ${new Date(chartData.timestamps[0]).toISOString()} to ${new Date(chartData.timestamps[chartData.timestamps.length - 1]).toISOString()}`)
           }
           
           // Log market cap data check
