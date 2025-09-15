@@ -330,6 +330,14 @@ export async function GET(request: NextRequest) {
         
         if (tweetTime < earliestDataTime) {
           console.log(`⚠️ Tweet posted before chart data exists. Tweet: ${new Date(tweetTime * 1000).toISOString()}, Earliest data: ${new Date(earliestDataTime * 1000).toISOString()}`)
+          
+          // For PUMP specifically, we'll return the available data instead of erroring
+          // This allows us to show the actual chart from when PUMP started trading
+          if (displaySymbol.includes('PUMP')) {
+            console.log('🔧 PUMP special case: Returning available data despite tweet being before earliest data')
+            return NextResponse.json(formatCodexResponse(retryBarsData, displaySymbol, marketCap, tokenSupply))
+          }
+          
           return NextResponse.json(
             { 
               error: `Tweet was posted before chart data exists for ${displaySymbol}`,
@@ -352,6 +360,14 @@ export async function GET(request: NextRequest) {
       
       if (tweetTime < earliestDataTime) {
         console.log(`⚠️ Tweet posted before chart data exists. Tweet: ${new Date(tweetTime * 1000).toISOString()}, Earliest data: ${new Date(earliestDataTime * 1000).toISOString()}`)
+        
+        // For PUMP specifically, we'll return the available data instead of erroring
+        // This allows us to show the actual chart from when PUMP started trading
+        if (displaySymbol.includes('PUMP')) {
+          console.log('🔧 PUMP special case: Returning available data despite tweet being before earliest data')
+          return NextResponse.json(formatCodexResponse(barsData, displaySymbol, marketCap, tokenSupply))
+        }
+        
         return NextResponse.json(
           { 
             error: `Tweet was posted before chart data exists for ${displaySymbol}`,
