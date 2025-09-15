@@ -122,6 +122,8 @@ export default function TweetChartAnchor() {
     setIsLoading(true)
     setChartData(undefined) // Reset chart data
 
+    let tweetDataResult: any = null // Declare outside try block for error handling access
+
     try {
       // Test API first if it's a new URL
       if (targetUrl !== "https://dexscreener.com/ethereum/0x6982508145454ce325ddbe47a25d4ec3d2311933") {
@@ -130,7 +132,7 @@ export default function TweetChartAnchor() {
       }
 
       // Fetch tweet data first to get the timestamp
-      const tweetDataResult = await fetchTweetData(tweetUrl)
+      tweetDataResult = await fetchTweetData(tweetUrl)
       console.log("Fetched tweet data:", tweetDataResult)
       
       // Now fetch chart data with real historical data (CoinGecko -> Birdeye -> Generated)
@@ -167,14 +169,43 @@ export default function TweetChartAnchor() {
     } catch (error) {
       console.error("Error generating chart:", error)
       
-      // Check if this is a tweet timestamp validation error
-      if (error instanceof Error && error.message.includes('Tweet Timestamp Issue')) {
+      // Check if this is a tweet timestamp validation error (422 status or specific message)
+      if (error instanceof Error && (error.message.includes('Tweet Timestamp Issue') || error.message.includes('Tweet was posted before') || error.message.includes('422'))) {
         toast({
           title: "⚠️ Tweet Before Token Creation",
           description: "This tweet was posted before the token existed. Showing chart from token creation date instead.",
           variant: "default",
           duration: 6000,
         })
+        
+        // For PUMP specifically, ensure we fallback to DexScreener with correct market cap display
+        console.log(`🔍 Checking if this is PUMP fallback: targetUrl="${targetUrl}"`)
+        if (targetUrl === "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn") {
+          console.log("🔧 PUMP fallback: Using DexScreener data with market cap display")
+          try {
+            const fallbackData = await fetchChartDataWithHistory(targetUrl, timeframe, undefined) // No tweet timestamp to avoid future date issues
+            setApiChartData({
+              ...fallbackData,
+              isPopularToken: false // Ensure PUMP shows market cap, not price
+            })
+            
+            // Set tweet data if we have it, otherwise use fallback
+            if (tweetDataResult) {
+              setFetchedTweetData(tweetDataResult)
+            } else {
+              // Fallback tweet data if we couldn't fetch it
+              setFetchedTweetData({
+                username: "alon",
+                handle: "@a1lon9", 
+                text: "fuck it\n\njew mode.",
+                timestamp: new Date().toISOString(),
+              })
+            }
+            setGenerationId(prev => prev + 1)
+          } catch (fallbackError) {
+            console.error("PUMP fallback also failed:", fallbackError)
+          }
+        }
       } else {
         toast({
           title: "Chart Generation Error",
