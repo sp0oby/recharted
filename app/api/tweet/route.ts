@@ -42,6 +42,7 @@ export async function GET(request: NextRequest) {
         console.log('Parsed Twitter date:', twitterDate.toString())
         
         if (!isNaN(twitterDate.getTime())) {
+          // Use the Twitter API timestamp as-is (it's reliable)
           parsedTimestamp = twitterDate.toISOString()
           console.log('Successfully parsed created_at:', parsedTimestamp)
         } else {
