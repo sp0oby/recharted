@@ -67,6 +67,23 @@ npm run start
 
 Configured for [Vercel](https://vercel.com): set `CODEX_API_KEY` in the project Environment Variables, then deploy from this repo.
 
+## Git and GitHub
+
+This folder is a clone of [github.com/sp0oby/recharted](https://github.com/sp0oby/recharted). Branch **`main`** tracks **`origin/main`**.
+
+Typical loop:
+
+```bash
+git pull origin main
+# edit code…
+git status
+git add .
+git commit -m "Short imperative description of the change."
+git push origin main
+```
+
+Never commit `.env` (it stays ignored). Copy [`.env.example`](./.env.example) to `.env` locally for secrets. Use **npm** with `package-lock.json`; `yarn.lock` is ignored.
+
 ## Project layout (high level)
 
 | Path | Role |

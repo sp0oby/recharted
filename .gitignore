@@ -16,6 +16,9 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# package managers (this repo uses npm + package-lock.json)
+yarn.lock
+
 # env files
 .env*
 !.env.example
