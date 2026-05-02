@@ -18,7 +18,7 @@ export const metadata: Metadata = {
   openGraph: {
     title: 'RECHARTED.IO - Expose Crypto Influencer Takes',
     description: 'The ultimate tool for roasting crypto influencers. Drop their tweets on token charts and expose their terrible predictions.',
-    url: 'https://recharted.io',
+    url: 'https://www.recharted.io/',
     siteName: 'RECHARTED.IO',
     type: 'website',
   },
@@ -47,7 +47,7 @@ export default function RootLayout({
               "@type": "WebApplication",
               "name": "RECHARTED.IO",
               "description": "The ultimate tool for roasting crypto influencers. Drop their tweets on token charts and expose their terrible predictions.",
-              "url": "https://recharted.io",
+              "url": "https://www.recharted.io/",
               "applicationCategory": "FinanceApplication",
               "operatingSystem": "Web Browser",
               "offers": {

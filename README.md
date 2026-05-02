@@ -2,7 +2,7 @@
 
 Next.js app that pairs an **X (Twitter) post** with **token price charts** so you can visualize what someone said relative to price action. Charts prefer **real OHLCV history** from [Codex](https://docs.codex.io/graphql), then fall back to [DexScreener](https://dexscreener.com/) current data with generated series.
 
-Live demo: [recharted.vercel.app](https://recharted.vercel.app) · Source: [github.com/sp0oby/recharted](https://github.com/sp0oby/recharted)
+Live site: [recharted.io](https://www.recharted.io/) · Source: [github.com/sp0oby/recharted](https://github.com/sp0oby/recharted)
 
 ## What it does
 
