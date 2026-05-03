@@ -1,99 +1,163 @@
-# Recharted
+# recharted
 
-Next.js app that pairs an **X (Twitter) post** with **token price charts** so you can visualize what someone said relative to price action. Charts prefer **real OHLCV history** from [Codex](https://docs.codex.io/graphql), then fall back to [DexScreener](https://dexscreener.com/) current data with generated series.
+> *the official ledger of bad takes, dump-tweets, and "trust me bro" exit liquidity*
 
-Live site: [recharted.io](https://www.recharted.io/) · Source: [github.com/sp0oby/recharted](https://github.com/sp0oby/recharted)
+![Bro tweeted "fuck it jew mode" at the literal top — recharted.io receipts](./public/recharted-example.png)
 
-## What it does
+[recharted.io](https://www.recharted.io/) bolts a tweet onto the chart at the exact second it was posted, so the world can see whether the KOL was a prophet or just providing exit liquidity to themselves.
 
-- **Main UI** (`app/page.tsx`): Enter a tweet URL, a DexScreener URL or raw token address, and a timeframe. The app loads tweet metadata (via `/api/tweet`), fetches chart series (`lib/api.ts` → `/api/codex` or DexScreener paths), and renders an interactive **Chart.js** candlestick view with a draggable tweet overlay (`components/trading-chart.tsx`, `components/tweet-overlay.tsx`). You can export the composed image with **html2canvas**.
-- **Data routing**: `fetchChartDataWithHistory` tries Codex (`address:networkId`) first for historical bars, then DexScreener-driven generation. Popular assets (BTC / ETH / SOL shortcuts) map to representative Dex pairs before Codex lookup.
-- **API routes** under `app/api/`:
-  - `GET /api/tweet?id=` — Tweet payload from Twitter syndication (token derived from tweet id).
-  - `GET /api/codex` — Codex `getBars` + metadata; requires `CODEX_API_KEY`.
-  - `GET /api/historical-data` — Same stacking logic as the client helper, returns JSON for `chartUrl`, `timeframe`, optional `tweetTimestamp`.
-  - `GET /api/codex-networks`, `GET /api/codex-test-solana` — Codex diagnostics (require API key).
+If your call mooned: **flex it.** If your call rugged the bag holders: congrats, **you've been recharted.**
 
-See [CODEX_INTEGRATION.md](./CODEX_INTEGRATION.md) for Codex parameters, network IDs, and timeframe mapping.
+---
 
-## Stack
+## what is this thing
+
+You give it:
+
+1. A tweet (the more confident, the better)
+2. A token (DexScreener URL, contract address, or just type the ticker)
+3. A timeframe
+
+It gives you back:
+
+- The chart of that token
+- The tweet, pinned to the candle where the words came out of someone's mouth
+- A downloadable PNG receipt
+
+That's it. That's the whole bit. The chart doesn't lie, and now neither does the timeline.
+
+---
+
+## how to use the site
+
+### 1. find a tweet worth roasting (or framing)
+
+The classics:
+
+- **"100x ez"** posted at the all-time high
+- **"this is not financial advice but"** followed by an immediate -90%
+- **"locked LP, doxxed dev, trust"** posted 2 hours before the rug
+- Or — being fair — your own banger call that you want to immortalize
+
+Copy the tweet URL. Works with `x.com` or `twitter.com`, photos and videos included.
+
+### 2. paste it into recharted.io
+
+- **Tweet URL** → paste it in the first box.
+- **Token** → use the search box to look up a ticker on Ethereum, Solana, Base, BSC, Arbitrum, Optimism, Polygon, Avalanche, or Blast. You can also drop a DexScreener URL or raw contract address if you know what you're doing.
+- **Timeframe** → pick how zoomed-in you want the receipt. Sub-minute windows for the truly nuclear pump-and-dump moments, days/weeks for the slow-bleed scams.
+
+### 3. hit generate
+
+The chart loads, the tweet snaps onto the timestamp where it was posted, and the bag-holder pain becomes visible to all.
+
+### 4. drag the tweet (optional)
+
+Don't like where the tweet sits? Drag it. Position it next to the candle that broke their wallet for maximum visual damage.
+
+### 5. export the receipt
+
+One click → PNG. Now it's a meme. Post it. Quote-tweet the original. Credit recharted.io if you're feeling generous, don't if you're not. The internet remembers either way.
+
+---
+
+## how being recharted works
+
+You are recharted when **any** of the following happens:
+
+- You posted "going long" and the chart immediately did a vertical handstand into the abyss.
+- You shilled a coin that rugged within the same week.
+- You called the bottom three bottoms ago.
+- You called the top three tops ago.
+- You posted "I told you" while quote-tweeting yourself, but the chart says you didn't, in fact, tell them.
+- You said "trust me" out loud, on the timeline, with witnesses.
+
+There is no appeal process. The candle is judge, jury, and exit liquidity.
+
+---
+
+## tech, briefly
 
 - **Framework**: Next.js 15 (App Router), React 19, TypeScript
-- **UI**: Tailwind CSS, Radix/shadcn-style components (`components/ui`), Geist fonts, `next-themes`, Sonner toasts
-- **Charts**: Chart.js (`components/trading-chart.tsx`); Recharts is also in dependencies
-- **Analytics**: `@vercel/analytics` is installed (`app/layout.tsx` imports it; add `<Analytics />` in the body when you want Vercel Analytics enabled)
+- **Charts**: Chart.js
+- **Tweet data**: Twitter syndication via `/api/tweet`
+- **Token search & OHLCV**: [Codex GraphQL](https://docs.codex.io/graphql) (multi-chain) — see [CODEX_INTEGRATION.md](./CODEX_INTEGRATION.md)
+- **Solana sub-minute spike capture**: Helius swap aggregation via `/api/helius-swaps`
+- **Native/major tokens** (BTC, ETH, SOL, BNB, USDC, USDT) are surfaced regardless of Codex ranking so they don't get drowned out by Solana memecoin tickers
+- **Export**: html2canvas
 
-## Prerequisites
+API routes that actually exist:
+
+| Route | Job |
+|---|---|
+| `GET /api/tweet?id=…` | Tweet payload (text, author, timestamp, photos) |
+| `GET /api/token-search?q=…&chain=…` | Multi-chain token autocomplete with major-token presets |
+| `GET /api/codex` | OHLCV bars + token metadata (needs `CODEX_API_KEY`) |
+| `GET /api/helius-swaps` | Solana sub-minute candles built from raw swap transactions |
+
+---
+
+## run it locally
+
+You wanted to look at the code. Respect.
+
+### prerequisites
 
 - Node.js 18+ (20+ recommended for Next 15)
-- npm, pnpm, or yarn (lockfiles exist for npm and pnpm)
+- An API key from [Codex](https://www.codex.io/) — required for chart data
+- *(optional)* A [Helius](https://www.helius.dev/) RPC URL if you want Solana sub-minute resolution
 
-## Environment variables
-
-Copy `.env.example` to `.env` and set at minimum **`CODEX_API_KEY`**. Without it, Codex routes return 500 and the UI relies on DexScreener/mock fallbacks where applicable.
-
-```bash
-cp .env.example .env
-```
-
-## Install and run the frontend (dev)
-
-From the repository root:
+### install
 
 ```bash
+git clone https://github.com/sp0oby/recharted.git
+cd recharted
 npm install
+cp .env.example .env
+# open .env and paste your CODEX_API_KEY (and HELIUS_RPC_URL if you have one)
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3000](http://localhost:3000) and start cooking.
 
-Other scripts:
+### other scripts
 
 ```bash
 npm run build    # production build
-npm run start    # run production server (after build)
-npm run lint     # Next.js ESLint
+npm run start    # run production server after build
+npm run lint     # Next ESLint
 ```
 
-## Production build locally
+### project layout
 
-```bash
-npm install
-npm run build
-npm run start
-```
+| Path | What lives there |
+|---|---|
+| `app/page.tsx` | Main UI: inputs, generate flow, PNG export |
+| `app/api/*` | Tweet, Codex, Helius, and token-search endpoints |
+| `lib/api.ts` | Client fetch helpers, DexScreener URL parsing, Codex/Helius stacking |
+| `components/trading-chart.tsx` | Chart.js rendering and timeframe windows |
+| `components/tweet-overlay.tsx` | Draggable tweet card with timestamp anchoring |
+| `components/token-search.tsx` | Multi-chain token autocomplete |
 
-## Deploy
+### deploy
 
-Configured for [Vercel](https://vercel.com): set `CODEX_API_KEY` in the project Environment Variables, then deploy from this repo.
+Set `CODEX_API_KEY` (and optionally `HELIUS_RPC_URL`) in your Vercel project's Environment Variables, then push to `main`. That's it.
 
-## Git and GitHub
-
-This folder is a clone of [github.com/sp0oby/recharted](https://github.com/sp0oby/recharted). Branch **`main`** tracks **`origin/main`**.
-
-Typical loop:
+### git workflow
 
 ```bash
 git pull origin main
 # edit code…
 git status
-git add .
-git commit -m "Short imperative description of the change."
+git add path/to/file
+git commit -m "short imperative message"
 git push origin main
 ```
 
-Never commit `.env` (it stays ignored). Copy [`.env.example`](./.env.example) to `.env` locally for secrets. Use **npm** with `package-lock.json`; `yarn.lock` is ignored.
+Never commit `.env` — it's ignored. Use `npm` (the repo ships `package-lock.json`; `yarn.lock` is ignored).
 
-## Project layout (high level)
+---
 
-| Path | Role |
-|------|------|
-| `app/page.tsx` | Main client screen: inputs, generate flow, export |
-| `app/api/*` | Tweet + Codex + historical JSON endpoints |
-| `lib/api.ts` | Client-side fetch helpers, Dex URL parsing, Codex/Dex stacking |
-| `components/trading-chart.tsx` | Chart.js rendering |
-| `components/tweet-overlay.tsx` | Draggable tweet card |
+## disclaimer
 
-## License
-
-Add a `LICENSE` file if you want explicit terms; the upstream package metadata currently marks the package as private.
+Not financial advice. Not legal advice. Not therapy. If you got recharted, that's between you and the candle. We just made the screenshot easier.

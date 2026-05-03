@@ -12,12 +12,21 @@ const libreFranklin = Libre_Franklin({
   display: 'swap',
 })
 
+interface TweetMedia {
+  type: 'photo' | 'video' | 'animated_gif'
+  url: string
+  width?: number
+  height?: number
+  videoUrl?: string
+}
+
 interface TweetData {
   username: string
   handle: string
   text: string
   timestamp: string
   profileImage?: string
+  media?: TweetMedia[]
 }
 
 interface Position {
@@ -90,8 +99,8 @@ export default function TweetOverlay({
         setAnchorPoint(timeAnchor)
 
         // Calculate tweet center - adjust for mobile
-        const tweetWidth = isMobile ? 128 : 288
-        const tweetHeight = isMobile ? 80 : 120
+        const tweetWidth = isMobile ? 176 : 288
+        const tweetHeight = isMobile ? 100 : 120
         const tweetCenterX = position.x + tweetWidth / 2
         const tweetCenterY = position.y + tweetHeight / 2
 
@@ -293,19 +302,34 @@ export default function TweetOverlay({
       const tweetTimestamp = inputDateTime.getTime()
       let beforeIndex = -1
       let afterIndex = -1
-      
+
       // Find the data points immediately before and after the tweet time
       for (let i = 0; i < chartData.timeData.length - 1; i++) {
         const currentTime = chartData.timeData[i].timestamp
         const nextTime = chartData.timeData[i + 1].timestamp
-        
+
         if (tweetTimestamp >= currentTime && tweetTimestamp <= nextTime) {
           beforeIndex = i
           afterIndex = i + 1
           break
         }
       }
-      
+
+      // If tweet falls OUTSIDE the data range, extrapolate from the first or last
+      // segment so the anchor still moves smoothly (instead of snapping to the nearest
+      // discrete data point). We clamp the extrapolation to the chart area so the
+      // anchor sits cleanly at the edge when the tweet is far outside.
+      if (beforeIndex < 0 || afterIndex < 0) {
+        const lastIdx = chartData.timeData.length - 1
+        if (tweetTimestamp < chartData.timeData[0].timestamp) {
+          beforeIndex = 0
+          afterIndex = 1
+        } else if (tweetTimestamp > chartData.timeData[lastIdx].timestamp) {
+          beforeIndex = lastIdx - 1
+          afterIndex = lastIdx
+        }
+      }
+
       // If we found bracketing points, interpolate between them
       if (beforeIndex >= 0 && afterIndex >= 0) {
         const beforeTime = chartData.timeData[beforeIndex].timestamp
@@ -322,13 +346,17 @@ export default function TweetOverlay({
           const beforePoint = metaData.data[beforeIndex]
           const afterPoint = metaData.data[afterIndex]
           
-          // Interpolate X position based on time
-          exactX = beforePoint.x + (afterPoint.x - beforePoint.x) * timeFactor
-          
-          // Interpolate Y position based on price
+          // Interpolate X position based on time. timeFactor may be < 0 (tweet before
+          // first data point) or > 1 (tweet after last) when extrapolating; clamp the
+          // resulting pixel to the chart area so the anchor stays on-screen.
+          const rawExactX = beforePoint.x + (afterPoint.x - beforePoint.x) * timeFactor
+          exactX = Math.max(chartArea.left, Math.min(chartArea.right, rawExactX))
+
+          // Interpolate Y position based on price (also clamp to chart area)
           const interpolatedPrice = beforePrice + (afterPrice - beforePrice) * timeFactor
           const yScale = chart.scales.y
-          exactY = yScale.getPixelForValue(interpolatedPrice)
+          const rawExactY = yScale.getPixelForValue(interpolatedPrice)
+          exactY = Math.max(chartArea.top, Math.min(chartArea.bottom, rawExactY))
           
           console.log(`🎯 EXACT INTERPOLATION: Tweet at ${new Date(tweetTimestamp).toISOString()}`)
           console.log(`📍 Between points: ${new Date(beforeTime).toISOString()} and ${new Date(afterTime).toISOString()}`)
@@ -403,7 +431,7 @@ export default function TweetOverlay({
   }
 
   // Responsive tweet card dimensions
-  const tweetWidth = isMobile ? "w-32" : "w-72"
+  const tweetWidth = isMobile ? "w-44" : "w-72"
   const anchorSize = isMobile ? "w-4 h-4" : "w-5 h-5"
   const anchorOffset = isMobile ? 8 : 10
 
@@ -524,6 +552,61 @@ export default function TweetOverlay({
                overflowWrap: 'break-word'
              }}>{tweetData.text}</p>
         </div>
+
+        {/* Tweet Media (photos, videos, gifs) */}
+        {tweetData.media && tweetData.media.length > 0 && (
+          <div
+            className={`mb-1 sm:mb-2 md:mb-3 grid gap-0.5 sm:gap-1 rounded overflow-hidden border-1 sm:border-2 border-black ${
+              tweetData.media.length === 1
+                ? 'grid-cols-1'
+                : tweetData.media.length === 2
+                ? 'grid-cols-2'
+                : tweetData.media.length === 3
+                ? 'grid-cols-2'
+                : 'grid-cols-2'
+            }`}
+          >
+            {tweetData.media.slice(0, 4).map((m, i) => {
+              // For 3-photo layout: first photo spans both rows, others stack
+              const spanRowsForFirstOfThree =
+                tweetData.media!.length === 3 && i === 0 ? 'row-span-2' : ''
+              const aspect =
+                tweetData.media!.length === 1
+                  ? m.width && m.height
+                    ? `${m.width} / ${m.height}`
+                    : '16 / 9'
+                  : '1 / 1'
+
+              if (m.type === 'video' || m.type === 'animated_gif') {
+                return (
+                  <video
+                    key={i}
+                    src={m.videoUrl || m.url}
+                    poster={m.url}
+                    className={`w-full h-full object-cover ${spanRowsForFirstOfThree}`}
+                    style={{ aspectRatio: aspect }}
+                    muted
+                    loop
+                    playsInline
+                    autoPlay={m.type === 'animated_gif'}
+                    controls={m.type === 'video'}
+                  />
+                )
+              }
+              return (
+                <img
+                  key={i}
+                  src={m.url}
+                  alt=""
+                  className={`w-full h-full object-cover ${spanRowsForFirstOfThree}`}
+                  style={{ aspectRatio: aspect }}
+                  loading="lazy"
+                  draggable={false}
+                />
+              )
+            })}
+          </div>
+        )}
 
         {/* Tweet Metadata - Hide on mobile to save space */}
         <div className="hidden sm:block text-xs text-gray-600 font-normal mb-1 sm:mb-2">

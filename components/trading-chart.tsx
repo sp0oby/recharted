@@ -7,6 +7,26 @@ Chart.register(...registerables)
 
 // Zoom plugin completely removed to prevent scrolling issues
 
+// Display-window length per timeframe. Kept narrower than the data fetch
+// window in app/api/codex/route.ts so the chart focuses around the tweet
+// while still letting spike-capture candles fall outside the view if needed.
+function getTimeframeInMs(tf: string): number {
+  switch (tf) {
+    case "5s": return 5 * 60 * 1000             // 5-minute window for 1s candles
+    case "15s": return 15 * 60 * 1000            // 15-minute window for 5s candles
+    case "30s": return 30 * 60 * 1000            // 30-minute window for 15s candles
+    case "5m": return 4 * 60 * 60 * 1000        // 4h total for 5min candles
+    case "15m": return 12 * 60 * 60 * 1000      // 12h total for 15min candles
+    case "1h": return 24 * 60 * 60 * 1000       // 24h total for 1h candles
+    case "4h": return 4 * 24 * 60 * 60 * 1000   // 4d total for 4h candles
+    case "6h": return 5 * 24 * 60 * 60 * 1000   // 5d total for 6h candles
+    case "1d": return 14 * 24 * 60 * 60 * 1000  // 14d total for daily candles
+    case "1w": return 14 * 24 * 60 * 60 * 1000  // 14d total (2w centered)
+    case "1m": return 90 * 24 * 60 * 60 * 1000  // 90d total (3 months)
+    default: return 24 * 60 * 60 * 1000
+  }
+}
+
 interface TradingChartProps {
   tokenPair: string
   onChartReady?: (chartData: any) => void
@@ -52,21 +72,6 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
 
         // Use real chart data if available, otherwise fall back to mock data
         const dataToUse = chartData ? convertApiDataToChartData(chartData) : generateMockCandlestickData(tweetTimestamp)
-        
-        // Helper function for timeframe calculations - MUCH more restrictive windows
-        const getTimeframeInMs = (tf: string): number => {
-          switch (tf) {
-            case "5m": return 4 * 60 * 60 * 1000      // 4 hours total for 5min candles
-            case "15m": return 12 * 60 * 60 * 1000    // 12 hours total for 15min candles  
-            case "1h": return 24 * 60 * 60 * 1000     // 24 hours total for 1h candles
-            case "4h": return 4 * 24 * 60 * 60 * 1000 // 4 days total for 4h candles
-            case "6h": return 5 * 24 * 60 * 60 * 1000 // 5 days total for 6h candles
-            case "1d": return 14 * 24 * 60 * 60 * 1000 // 14 days total for daily candles
-            case "1w": return 14 * 24 * 60 * 60 * 1000 // 14 days total for weekly candles (2 weeks centered)
-            case "1m": return 90 * 24 * 60 * 60 * 1000 // 90 days total for monthly candles (3 months: 2 before tweet + 1 current)
-            default: return 24 * 60 * 60 * 1000
-          }
-        }
         
         // Calculate price range from the actual filtered timeframe data (not full dataset)
         let timeframeMinPrice: number | undefined = undefined
@@ -182,37 +187,19 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                   size: window.innerWidth < 768 ? 10 : 12,
                   weight: "bold",
                 },
-                maxTicksLimit: window.innerWidth < 768 ? 4 : 8,
-                callback: function(value: any, index: number): string {
-                  // Use the properly formatted labels from our data
+                autoSkip: true,
+                autoSkipPadding: 12,
+                maxRotation: 0,
+                minRotation: 0,
+                maxTicksLimit: window.innerWidth < 768 ? 5 : 9,
+                // For category scales, `value` is the data index. Use it (not `index`,
+                // which is the position within the post-autoSkip ticks array) to look up
+                // the corresponding pre-formatted label.
+                callback: function(value: any): string {
                   const labels = dataToUse.labels
-                  if (labels && labels[index]) {
-                    // Show fewer labels for cleaner display
-                                if (timeframe === "1d") {
-              return index % 3 === 0 ? labels[index] : ""
-            } else if (timeframe === "4h" || timeframe === "6h") {
-              return index % 2 === 0 ? labels[index] : ""
-            } else if (timeframe === "1m") {
-              // For monthly, show first label, month changes, and last label
-              if (index === 0) return labels[index]
-              
-              const currentLabel = labels[index]
-              const prevLabel = labels[index - 1]
-              
-              // Show label if it's different from the previous one (month changed)
-              if (currentLabel && prevLabel && currentLabel !== prevLabel) {
-                return currentLabel
-              }
-              
-              // Also show the last label to ensure current month is visible
-              if (index === labels.length - 1) {
-                return labels[index]
-              }
-              
-              return ""
-            } else {
-              return index % 3 === 0 ? labels[index] : ""
-            }
+                  const dataIdx = typeof value === 'number' ? value : Number(value)
+                  if (labels && Number.isFinite(dataIdx) && labels[dataIdx]) {
+                    return labels[dataIdx]
                   }
                   return ""
                 }
@@ -466,7 +453,15 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
       let timeString: string
 
       // Format time based on timeframe - consistent formatting across all timeframes
-      if (timeframe === "1w") {
+      if (timeframe === "5s" || timeframe === "15s" || timeframe === "30s") {
+        // Sub-minute timeframes: show HH:MM:SS so the second matters
+        timeString = date.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        })
+      } else if (timeframe === "1w") {
         // For weekly, show date only (no time, no year for consistency)
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
@@ -529,21 +524,6 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
     return { labels, prices, volumes, timeData }
   }
 
-  // Helper function for timeframe calculations - MUCH more restrictive windows
-  const getTimeframeInMsHelper = (tf: string): number => {
-    switch (tf) {
-      case "5m": return 4 * 60 * 60 * 1000      // 4 hours total for 5min candles
-      case "15m": return 12 * 60 * 60 * 1000    // 12 hours total for 15min candles  
-      case "1h": return 24 * 60 * 60 * 1000     // 24 hours total for 1h candles
-      case "4h": return 4 * 24 * 60 * 60 * 1000 // 4 days total for 4h candles
-      case "6h": return 5 * 24 * 60 * 60 * 1000 // 5 days total for 6h candles
-      case "1d": return 14 * 24 * 60 * 60 * 1000 // 14 days total for daily candles
-      case "1w": return 14 * 24 * 60 * 60 * 1000 // 14 days total for weekly candles (2 weeks centered)
-      case "1m": return 90 * 24 * 60 * 60 * 1000 // 90 days total for monthly candles (3 months: 2 before tweet + 1 current)
-      default: return 24 * 60 * 60 * 1000
-    }
-  }
-
   const generateMockCandlestickData = (tweetTimestamp?: string) => {
     const labels: string[] = []
     const prices: number[] = []
@@ -555,6 +535,9 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
     // Get interval based on timeframe
     const getIntervalMs = (tf: string): number => {
       switch (tf) {
+        case "5s": return 1 * 1000           // 1-second candles
+        case "15s": return 5 * 1000          // 5-second candles
+        case "30s": return 15 * 1000         // 15-second candles
         case "5m": return 5 * 60 * 1000
         case "15m": return 15 * 60 * 1000
         case "1h": return 60 * 60 * 1000
@@ -581,7 +564,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
     }
 
     // Calculate timeline to center the tweet in the middle of the visible timeframe
-    const timeframeMs = getTimeframeInMsHelper(timeframe)
+    const timeframeMs = getTimeframeInMs(timeframe)
     const halfTimeframe = timeframeMs / 2
     const startTime = new Date(centerTime.getTime() - halfTimeframe)
     const endTime = new Date(centerTime.getTime() + halfTimeframe)
@@ -597,7 +580,15 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
       let timeString: string
 
       // Format time based on timeframe
-      if (timeframe === "1d") {
+      if (timeframe === "5s" || timeframe === "15s" || timeframe === "30s") {
+        // Sub-minute: show seconds
+        timeString = time.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+        })
+      } else if (timeframe === "1d") {
         timeString = time.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
@@ -646,7 +637,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
   }
 
   return (
-    <div className="w-full h-full p-2 md:p-4 bg-black relative" style={{ maxHeight: '100%', overflow: 'hidden' }}>
+    <div className="w-full h-full p-1 sm:p-2 md:p-4 bg-black relative" style={{ maxHeight: '100%', overflow: 'hidden' }}>
       <canvas 
         ref={chartRef} 
         className="w-full h-full" 

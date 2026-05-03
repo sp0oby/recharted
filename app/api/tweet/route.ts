@@ -93,13 +93,52 @@ export async function GET(request: NextRequest) {
     }
     
     const username = data.user?.screen_name || data.user?.name || fallbackUsername
-    
+
+    // Extract media (photos, videos, gifs) from syndication response.
+    // mediaDetails is the canonical array; each item: { type, media_url_https, original_info, video_info? }
+    type Media = {
+      type: 'photo' | 'video' | 'animated_gif'
+      url: string
+      width?: number
+      height?: number
+      videoUrl?: string
+    }
+    const media: Media[] = []
+    const mediaDetails: any[] = Array.isArray(data.mediaDetails) ? data.mediaDetails : []
+    for (const m of mediaDetails) {
+      if (!m || !m.media_url_https) continue
+      const type = (m.type || 'photo') as Media['type']
+      let videoUrl: string | undefined
+      if ((type === 'video' || type === 'animated_gif') && m.video_info?.variants) {
+        // Pick the highest-bitrate mp4 variant
+        const variants = m.video_info.variants.filter((v: any) => v.content_type === 'video/mp4')
+        variants.sort((a: any, b: any) => (b.bitrate || 0) - (a.bitrate || 0))
+        videoUrl = variants[0]?.url
+      }
+      media.push({
+        type,
+        url: m.media_url_https,
+        width: m.original_info?.width,
+        height: m.original_info?.height,
+        videoUrl,
+      })
+    }
+
+    // Twitter syndication includes media URLs as t.co shortlinks at the END of `text`.
+    // Strip the trailing pic.twitter.com / t.co shortlinks when we have media to display,
+    // so the tweet body shows clean text without the dangling URL.
+    let cleanedText: string = data.text || "Tweet content unavailable"
+    if (media.length > 0) {
+      cleanedText = cleanedText.replace(/\s*https:\/\/t\.co\/\w+\s*$/g, '').trim()
+    }
+
     return NextResponse.json({
       username: username,
       handle: `@${data.user?.screen_name || fallbackUsername}`,
-      text: data.text || "Tweet content unavailable",
+      text: cleanedText,
       timestamp: parsedTimestamp,
       profileImage: data.user?.profile_image_url_https || data.user?.profile_image_url || null,
+      media,
       // Remove engagement stats completely
     })
   } catch (error) {

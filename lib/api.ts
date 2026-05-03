@@ -1,5 +1,13 @@
 // API utility functions for fetching tweet and chart data
 
+export interface TweetMedia {
+  type: 'photo' | 'video' | 'animated_gif'
+  url: string
+  width?: number
+  height?: number
+  videoUrl?: string
+}
+
 export interface TweetApiResponse {
   username: string
   handle: string
@@ -7,6 +15,7 @@ export interface TweetApiResponse {
   timestamp: string
   profileImage?: string
   verified?: boolean
+  media?: TweetMedia[]
 }
 
 export interface ChartApiResponse {
@@ -240,6 +249,7 @@ export async function fetchTweetData(tweetUrl: string): Promise<TweetApiResponse
         text: data.text || "Tweet content unavailable",
         timestamp: data.timestamp || new Date().toISOString(),
         profileImage: data.profileImage || null,
+        media: Array.isArray(data.media) ? data.media : [],
       }
     }
 
@@ -526,6 +536,87 @@ export async function fetchCodexChartData(
   }
 }
 
+/**
+ * Map our UI timeframe value to Helius/Codex resolution code.
+ * Only sub-minute timeframes are intended for Helius; minute+ should use Codex.
+ */
+function timeframeToHeliusResolution(timeframe: string): string | null {
+  switch (timeframe) {
+    case '5s':  return '1S'
+    case '15s': return '5S'
+    case '30s': return '15S'
+    default:    return null
+  }
+}
+
+/**
+ * Fetch sub-minute Solana candles via our Helius-backed route.
+ * Used as a fallback when Codex returns no_data / sparse data for low-volume Solana tokens.
+ */
+export async function fetchHeliusChartData(
+  tokenAddress: string,
+  timeframe: string,
+  tweetTimestamp?: string
+): Promise<ChartApiResponse> {
+  const resolution = timeframeToHeliusResolution(timeframe)
+  if (!resolution) {
+    throw new Error(`Helius fallback only supports sub-minute timeframes; got "${timeframe}"`)
+  }
+
+  const windowMs = getTimeframeInMs(timeframe)
+  const nowSec = Math.floor(Date.now() / 1000)
+  let toSec = nowSec
+  let fromSec = nowSec - Math.floor(windowMs / 1000)
+
+  if (tweetTimestamp) {
+    const tweetSec = Math.floor(new Date(tweetTimestamp).getTime() / 1000)
+    if (isFinite(tweetSec) && tweetSec > 0) {
+      const halfSec = Math.floor(windowMs / 2000)
+      fromSec = tweetSec - halfSec
+      toSec = Math.min(nowSec, tweetSec + halfSec)
+    }
+  }
+
+  const params = new URLSearchParams({
+    address: tokenAddress,
+    from: String(fromSec),
+    to: String(toSec),
+    resolution,
+  })
+  const res = await fetch(`/api/helius-swaps?${params.toString()}`)
+  if (!res.ok) {
+    const errBody = await res.json().catch(() => ({}))
+    throw new Error(`Helius route error: ${errBody?.error || res.statusText}`)
+  }
+  const data = await res.json()
+  const candles: Array<{ t: number; o: number; h: number; l: number; c: number; v: number }> =
+    Array.isArray(data?.candles) ? data.candles : []
+
+  if (candles.length === 0) {
+    throw new Error('Helius returned no candles for the requested window')
+  }
+
+  const prices = candles.map((c) => c.c)
+  const volumes = candles.map((c) => c.v)
+  const timestamps = candles.map((c) => new Date(c.t * 1000).toISOString())
+  const currentPrice = prices[prices.length - 1]
+  const firstPrice = prices[0]
+  const priceChange24h = firstPrice > 0 ? ((currentPrice - firstPrice) / firstPrice) * 100 : 0
+
+  console.log(`✅ Helius returned ${candles.length} sub-minute candles (${data.pricedSwapCount}/${data.swapCount} swaps priced)`)
+
+  return {
+    symbol: tokenAddress,
+    prices,
+    volumes,
+    timestamps,
+    currentPrice,
+    priceChange24h,
+    source: 'helius',
+    dataPoints: candles.length,
+  }
+}
+
 
 /**
  * Enhanced fetchChartData that tries Codex first, then falls back to DexScreener
@@ -537,10 +628,74 @@ export async function fetchCodexChartData(
 export async function fetchChartDataWithHistory(
   chartUrl: string,
   timeframe: string,
-  tweetTimestamp?: string
+  tweetTimestamp?: string,
+  networkOverride?: { address: string; networkId: number }
 ): Promise<ChartApiResponse> {
   console.log('🚀 Using enhanced chart data fetching with API priority routing')
-  
+
+  // When the caller (e.g. token search picker) already knows the exact address +
+  // network, skip URL parsing and chain auto-detection entirely.
+  if (networkOverride && networkOverride.address && networkOverride.networkId) {
+    const codexSymbol = `${networkOverride.address}:${networkOverride.networkId}`
+    const isSolana = networkOverride.networkId === 1399811149
+    const isSubMinute = timeframe === '5s' || timeframe === '15s' || timeframe === '30s'
+    console.log(`🎯 Using network override: ${codexSymbol}`)
+    try {
+      const codexData = await fetchCodexChartData(codexSymbol, timeframe, tweetTimestamp)
+      // If Codex returned no candles for a Solana sub-minute request, try Helius before accepting empty data
+      if (isSolana && isSubMinute && (!codexData.prices || codexData.prices.length === 0)) {
+        console.log('🪐 Codex returned no sub-minute data on Solana — trying Helius fallback')
+        try {
+          return await fetchHeliusChartData(networkOverride.address, timeframe, tweetTimestamp)
+        } catch (heliusErr) {
+          console.warn('Helius fallback after empty Codex also failed:', heliusErr)
+        }
+      }
+      return { ...codexData, source: 'codex' }
+    } catch (err) {
+      console.warn('Codex fetch failed for override:', err)
+
+      // Solana sub-minute: try Helius before DexScreener
+      if (isSolana && isSubMinute) {
+        try {
+          console.log('🪐 Trying Helius sub-minute fallback for Solana token')
+          return await fetchHeliusChartData(networkOverride.address, timeframe, tweetTimestamp)
+        } catch (heliusErr) {
+          console.warn('Helius fallback failed, continuing to DexScreener:', heliusErr)
+        }
+      }
+
+      // Fall through to DexScreener fallback using just the address
+      try {
+        const dexUrl = `https://api.dexscreener.com/latest/dex/tokens/${networkOverride.address}`
+        const res = await fetch(dexUrl)
+        if (res.ok) {
+          const json: DexScreenerResponse = await res.json()
+          if (json.pairs && json.pairs.length > 0) {
+            const pair = json.pairs[0]
+            const hist = generateHistoricalDataFromPair(pair, timeframe, tweetTimestamp)
+            return {
+              symbol: `${pair.baseToken.symbol}/${pair.quoteToken.symbol}`,
+              prices: hist.prices,
+              volumes: hist.volumes,
+              timestamps: hist.timestamps,
+              currentPrice: parseFloat(pair.priceUsd),
+              priceChange24h: pair.priceChange.h24,
+              marketCap: pair.fdv,
+              tokenSupply: pair.fdv && parseFloat(pair.priceUsd) > 0
+                ? pair.fdv / parseFloat(pair.priceUsd)
+                : undefined,
+              source: 'dexscreener',
+            }
+          }
+        }
+      } catch (fbErr) {
+        console.error('DexScreener fallback failed:', fbErr)
+      }
+      throw err
+    }
+  }
+
   // Check if this is a major token that should show price instead of market cap
   // Only BTC, ETH, SOL are mapped here - other hotlist tokens (like PUMP) will show market cap
   const popularTokenMap: Record<string, string> = {
@@ -548,13 +703,13 @@ export async function fetchChartDataWithHistory(
     'ethereum': 'https://dexscreener.com/ethereum/0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2', // WETH
     'solana': 'https://dexscreener.com/ethereum/0xd31a59c85ae9d8edefec411d448f90841571b89c' // SOL
   }
-  
+
   let actualUrl = chartUrl
   if (popularTokenMap[chartUrl.toLowerCase()]) {
     actualUrl = popularTokenMap[chartUrl.toLowerCase()]
     console.log(`🪙 Detected popular token: ${chartUrl} -> using ${actualUrl}`)
   }
-  
+
   // Extract token info from the actual URL (might be converted for popular tokens)
   const tokenInfo = extractTokenFromUrl(actualUrl)
   
@@ -617,12 +772,29 @@ export async function fetchChartDataWithHistory(
       }
       
       const codexData = await fetchCodexChartData(codexSymbol, timeframe, tweetTimestamp)
+
+      // Solana sub-minute: if Codex came back empty, try Helius before returning
+      const isSolana = tokenInfo.chain === 'solana'
+      const isSubMinute = timeframe === '5s' || timeframe === '15s' || timeframe === '30s'
+      if (isSolana && isSubMinute && (!codexData.prices || codexData.prices.length === 0)) {
+        console.log('🪐 Codex returned no sub-minute data on Solana — trying Helius fallback')
+        try {
+          const heliusData = await fetchHeliusChartData(tokenInfo.address!, timeframe, tweetTimestamp)
+          return {
+            ...heliusData,
+            isPopularToken: popularTokenMap[chartUrl.toLowerCase()] ? true : false,
+          }
+        } catch (heliusErr) {
+          console.warn('Helius fallback after empty Codex also failed:', heliusErr)
+        }
+      }
+
       console.log('✅ Successfully retrieved data from Codex API')
       return {
         ...codexData,
         isPopularToken: popularTokenMap[chartUrl.toLowerCase()] ? true : false
       }
-      
+
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error'
       
@@ -655,10 +827,26 @@ export async function fetchChartDataWithHistory(
       } else {
         console.log('⚠️ Codex API failed, falling back to DexScreener:', errorMessage)
         console.log('💡 This is normal for new/low-volume tokens not yet indexed by Codex. Using DexScreener fallback.')
+
+        // Solana sub-minute: try Helius before generated DexScreener data
+        const isSolana = tokenInfo.chain === 'solana'
+        const isSubMinute = timeframe === '5s' || timeframe === '15s' || timeframe === '30s'
+        if (isSolana && isSubMinute && tokenInfo.address) {
+          try {
+            console.log('🪐 Trying Helius sub-minute fallback for Solana token')
+            const heliusData = await fetchHeliusChartData(tokenInfo.address, timeframe, tweetTimestamp)
+            return {
+              ...heliusData,
+              isPopularToken: popularTokenMap[chartUrl.toLowerCase()] ? true : false,
+            }
+          } catch (heliusErr) {
+            console.warn('Helius fallback failed, continuing to DexScreener:', heliusErr)
+          }
+        }
       }
     }
   }
-  
+
   // Fallback to existing DexScreener integration
   console.log('🔄 Using DexScreener fallback with generated historical data')
   const dexScreenerData = await fetchChartData(actualUrl, timeframe, tweetTimestamp)
@@ -874,6 +1062,12 @@ function generateMockChartData(timeframe: string, tweetTimestamp?: string) {
 
 function getDataPointsForTimeframe(timeframe: string): number {
   switch (timeframe) {
+    case "5s":
+      return 300 // 5min window of 1s candles
+    case "15s":
+      return 180 // 15min window of 5s candles
+    case "30s":
+      return 120 // 30min window of 15s candles
     case "5m":
       return 48 // 4 hours of 5min candles
     case "15m":
@@ -893,6 +1087,12 @@ function getDataPointsForTimeframe(timeframe: string): number {
 
 function getIntervalMs(timeframe: string): number {
   switch (timeframe) {
+    case "5s":
+      return 1 * 1000        // 1-second candles for the 5s/5min view
+    case "15s":
+      return 5 * 1000        // 5-second candles
+    case "30s":
+      return 15 * 1000       // 15-second candles
     case "5m":
       return 5 * 60 * 1000
     case "15m":
@@ -913,8 +1113,11 @@ function getIntervalMs(timeframe: string): number {
 // Helper function to get optimal number of data points for chart readability
 function getOptimalDataPoints(timeframe: string): number {
   switch (timeframe) {
+    case "5s": return 300   // 5min window of 1s candles
+    case "15s": return 180  // 15min window of 5s candles
+    case "30s": return 120  // 30min window of 15s candles
     case "5m": return 24    // 2 hours of 5min candles
-    case "15m": return 24   // 6 hours of 15min candles  
+    case "15m": return 24   // 6 hours of 15min candles
     case "1h": return 24    // 24 hours of 1h candles
     case "4h": return 42    // 7 days of 4h candles
     case "6h": return 40    // 10 days of 6h candles
@@ -928,6 +1131,9 @@ function getOptimalDataPoints(timeframe: string): number {
 // Shorter timeframes = zoom in (less data), Longer timeframes = zoom out (more data)
 function getTimeframeInMs(timeframe: string): number {
   switch (timeframe) {
+    case "5s": return 5 * 60 * 1000             // 5-minute window for 1s candles
+    case "15s": return 15 * 60 * 1000            // 15-minute window for 5s candles
+    case "30s": return 30 * 60 * 1000            // 30-minute window for 15s candles
     case "5m": return 2 * 60 * 60 * 1000      // 2 hours total for 5min candles (24 candles)
     case "15m": return 6 * 60 * 60 * 1000     // 6 hours total for 15min candles (24 candles)
     case "1h": return 24 * 60 * 60 * 1000     // 24 hours total for 1h candles (24 candles)

@@ -7,13 +7,21 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Download, Move, Zap, Copy } from "lucide-react"
 import TradingChart from "@/components/trading-chart"
 import TweetOverlay from "@/components/tweet-overlay"
+import TokenSearch, { type TokenSearchResult } from "@/components/token-search"
 import html2canvas from "html2canvas"
 import { fetchTweetData, fetchChartDataWithHistory, testDexScreenerAPI } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
+
+interface TweetMedia {
+  type: 'photo' | 'video' | 'animated_gif'
+  url: string
+  width?: number
+  height?: number
+  videoUrl?: string
+}
 
 interface TweetData {
   username: string
@@ -21,6 +29,7 @@ interface TweetData {
   text: string
   timestamp: string
   profileImage?: string
+  media?: TweetMedia[]
 }
 
 interface Position {
@@ -35,51 +44,17 @@ interface ChartData {
   chartInstance: any
 }
 
-interface PopularToken {
-  name: string
-  symbol: string
-  address: string
-  network: string
-  showPrice?: boolean // true for BTC/ETH/SOL, false/undefined for market cap tokens
-}
-
-// Popular tokens with their addresses for quick selection
-const POPULAR_TOKENS: PopularToken[] = [
-  {
-    name: "Bitcoin",
-    symbol: "BTC",
-    address: "bitcoin",
-    network: "coingecko",
-    showPrice: true // Show price for major tokens
-  },
-  {
-    name: "Ethereum", 
-    symbol: "ETH",
-    address: "ethereum",
-    network: "coingecko",
-    showPrice: true // Show price for major tokens
-  },
-  {
-    name: "Solana",
-    symbol: "SOL", 
-    address: "solana",
-    network: "coingecko",
-    showPrice: true // Show price for major tokens
-  },
-  {
-    name: "PUMP",
-    symbol: "PUMP",
-    address: "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn",
-    network: "solana"
-    // showPrice: false (default) - Show market cap for smaller tokens
-  }
-]
-
 export default function TweetChartAnchor() {
   const { toast } = useToast()
   const [tweetUrl, setTweetUrl] = useState("https://x.com/a1lon9/status/1945238123908067530")
   const [chartUrl, setChartUrl] = useState("pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn")
-  const [selectedToken, setSelectedToken] = useState<string>("")
+  // When set, the user picked a token from search and we know the exact network.
+  // This bypasses URL/chain auto-detection and goes straight to Codex with networkId.
+  const [selectedNetwork, setSelectedNetwork] = useState<{
+    address: string
+    networkId: number
+    label: string // e.g. "CLANKER • Base"
+  } | null>(null)
   const [timeframe, setTimeframe] = useState("1h")
   const [tweetPosition, setTweetPosition] = useState<Position>({ x: 20, y: 20 })
   const [isDragging, setIsDragging] = useState(false)
@@ -100,25 +75,28 @@ export default function TweetChartAnchor() {
     timestamp: new Date().toISOString(),
   }
 
-  const handleTokenSelect = async (tokenAddress: string) => {
-    if (!tokenAddress) return
-    
-    const selectedTokenData = POPULAR_TOKENS.find(token => token.address === tokenAddress)
-    if (selectedTokenData) {
-      setSelectedToken(tokenAddress)
-      setChartUrl(tokenAddress)
-      
-      // Auto-generate chart if tweet URL is already filled
-      if (tweetUrl) {
-        console.log(`🚀 Auto-generating chart for ${selectedTokenData.name} (${selectedTokenData.symbol})`)
-        // Call generate function directly with the new token address
-        await generateChart(tokenAddress)
-      }
+  const handleSearchSelect = async (token: TokenSearchResult) => {
+    const network = {
+      address: token.address,
+      networkId: token.networkId,
+      label: `${token.symbol || "TOKEN"} • ${token.networkName}`,
+    }
+    setSelectedNetwork(network)
+    setChartUrl(token.address)
+
+    // Auto-generate if a tweet URL is already filled in.
+    if (tweetUrl) {
+      console.log(`🚀 Auto-generating chart for ${token.symbol} on ${token.networkName}`)
+      await generateChart(token.address, network)
     }
   }
 
-  const generateChart = async (urlOverride?: string) => {
+  const generateChart = async (
+    urlOverride?: string,
+    networkOverride?: { address: string; networkId: number; label?: string } | null
+  ) => {
     const targetUrl = urlOverride || chartUrl
+    const network = networkOverride !== undefined ? networkOverride : selectedNetwork
     setIsLoading(true)
     setChartData(undefined) // Reset chart data
 
@@ -136,7 +114,12 @@ export default function TweetChartAnchor() {
       console.log("Fetched tweet data:", tweetDataResult)
       
       // Now fetch chart data with real historical data (CoinGecko -> Birdeye -> Generated)
-      const chartDataResult = await fetchChartDataWithHistory(targetUrl, timeframe, tweetDataResult.timestamp)
+      const chartDataResult = await fetchChartDataWithHistory(
+        targetUrl,
+        timeframe,
+        tweetDataResult.timestamp,
+        network ? { address: network.address, networkId: network.networkId } : undefined
+      )
       console.log("Fetched chart data with historical API integration:", chartDataResult)
       
       // Debug marketCap data specifically
@@ -183,7 +166,12 @@ export default function TweetChartAnchor() {
         if (targetUrl === "pumpCmXqMfrsAkQ5r49WcJnRayYRqmXz6ae8H7H9Dfn") {
           console.log("🔧 PUMP fallback: Using DexScreener data with market cap display")
           try {
-            const fallbackData = await fetchChartDataWithHistory(targetUrl, timeframe, undefined) // No tweet timestamp to avoid future date issues
+            const fallbackData = await fetchChartDataWithHistory(
+              targetUrl,
+              timeframe,
+              undefined, // No tweet timestamp to avoid future date issues
+              network ? { address: network.address, networkId: network.networkId } : undefined
+            )
             setApiChartData({
               ...fallbackData,
               isPopularToken: false // Ensure PUMP shows market cap, not price
@@ -429,28 +417,33 @@ export default function TweetChartAnchor() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="popularTokens" className="font-bold text-base md:text-lg">
-                    Hotlist Tokens 🔥
+                  <Label className="font-bold text-base md:text-lg">
+                    Search Token
                   </Label>
-                  <Select value={selectedToken} onValueChange={handleTokenSelect}>
-                    <SelectTrigger className="border-2 border-black font-bold text-base md:text-lg">
-                      <SelectValue placeholder="Pick from our listed coins" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {POPULAR_TOKENS.map((token) => (
-                        <SelectItem key={token.address} value={token.address}>
-                          <div className="flex items-center gap-2">
-                            <span className="font-bold">${token.symbol}</span>
-                          </div>
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                  <TokenSearch
+                    onSelect={handleSearchSelect}
+                    initialValue={selectedNetwork?.label || ""}
+                  />
+                  {selectedNetwork && (
+                    <div className="text-xs text-gray-600">
+                      Selected:{" "}
+                      <span className="font-semibold text-black">
+                        {selectedNetwork.label}
+                      </span>{" "}
+                      <button
+                        type="button"
+                        onClick={() => setSelectedNetwork(null)}
+                        className="ml-1 underline hover:no-underline"
+                      >
+                        clear
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex items-center gap-2 text-sm text-gray-600">
                   <div className="flex-1 h-px bg-gray-300"></div>
-                  <span className="font-medium">OR</span>
+                  <span className="font-medium">OR PASTE ADDRESS</span>
                   <div className="flex-1 h-px bg-gray-300"></div>
                 </div>
 
@@ -460,24 +453,14 @@ export default function TweetChartAnchor() {
                   </Label>
                   <Input
                     id="chartUrl"
-                    value={selectedToken ? "" : chartUrl}
+                    value={chartUrl}
                     onChange={(e) => {
                       setChartUrl(e.target.value)
-                      // Clear selected token when manually typing
-                      if (selectedToken) {
-                        setSelectedToken("")
-                      }
+                      // Manually editing the address invalidates the searched network.
+                      if (selectedNetwork) setSelectedNetwork(null)
                     }}
-                    onFocus={() => {
-                      // Clear selected token when input is focused
-                      if (selectedToken) {
-                        setSelectedToken("")
-                      }
-                    }}
-                    className={`border-2 border-black font-bold text-base md:text-lg ${
-                      selectedToken ? 'bg-gray-100 text-gray-500' : ''
-                    }`}
-                    placeholder="BbbwE8rudhjK4husSRc37X..."
+                    className="border-2 border-black font-bold text-base md:text-lg"
+                    placeholder="0x... or Solana address"
                   />
                 </div>
 
@@ -501,14 +484,23 @@ export default function TweetChartAnchor() {
                     }}
                     className="w-full border-2 border-black font-bold text-base md:text-lg p-3 bg-white"
                   >
-                    <option value="5m">5 Minutes</option>
-                    <option value="15m">15 Minutes</option>
-                    <option value="1h">1 Hour</option>
-                    <option value="4h">4 Hours</option>
-                    <option value="6h">6 Hours</option>
-                    <option value="1d">1 Day</option>
-                    <option value="1w">1 Week</option>
-                    <option value="1m">1 Month</option>
+                    <optgroup label="Sub-minute (intra-minute motion)">
+                      <option value="5s">5min window · 1s candles</option>
+                      <option value="15s">15min window · 5s candles</option>
+                      <option value="30s">30min window · 15s candles</option>
+                    </optgroup>
+                    <optgroup label="Minutes / Hours">
+                      <option value="5m">3h window · 1m candles</option>
+                      <option value="15m">8h window · 1m candles</option>
+                      <option value="1h">16h window · 5m candles</option>
+                      <option value="4h">5d window · 15m candles</option>
+                      <option value="6h">8d window · 15m candles</option>
+                    </optgroup>
+                    <optgroup label="Days / Weeks">
+                      <option value="1d">30d window · 1h candles</option>
+                      <option value="1w">90d window · 4h candles</option>
+                      <option value="1m">2mo+ since tweet · 1d candles</option>
+                    </optgroup>
                   </select>
                 </div>
               </CardContent>
@@ -548,7 +540,7 @@ export default function TweetChartAnchor() {
           </div>
 
           {/* Right Panel - Chart Display */}
-          <div className="flex-1 relative min-h-[350px] sm:min-h-[400px] md:min-h-[500px] lg:min-h-[600px] order-2">
+          <div className="flex-1 relative min-h-[420px] sm:min-h-[480px] md:min-h-[560px] lg:min-h-[640px] order-2">
             <Card ref={chartCardRef} className="border-4 border-black shadow-[4px_4px_0px_0px_#000000] md:shadow-[8px_8px_0px_0px_#000000] h-full rounded-none" style={{backgroundColor: '#000000'}}>
               <CardHeader className="bg-black text-white relative p-3 sm:p-4 md:p-6">
                 <CardTitle className="font-black text-lg sm:text-xl md:text-2xl lg:text-4xl">RECHARTED.IO</CardTitle>
@@ -576,7 +568,7 @@ export default function TweetChartAnchor() {
                       timeframe={timeframe}
                       tweetTimestamp={tweetData.timestamp}
                       onChartReady={handleChartReady}
-                      isPopularToken={apiChartData?.isPopularToken || POPULAR_TOKENS.find(token => token.address === selectedToken)?.showPrice || false}
+                      isPopularToken={apiChartData?.isPopularToken || false}
                     />
                     <TweetOverlay
                       tweetData={tweetData}

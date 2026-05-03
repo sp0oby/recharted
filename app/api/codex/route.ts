@@ -424,10 +424,15 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
   }
   
   // Resolution mapping for Codex API with fallbacks for unsupported resolutions
-  // Using highest resolution possible to capture ALL spikes across all intervals
+  // Using highest resolution possible to capture ALL spikes across all intervals.
+  // Sub-minute resolutions (1S/5S/15S/30S) require Codex's tick data and are used
+  // when the user wants to see intra-minute motion around a tweet.
   const resolutionMap: Record<string, { primary: string; fallback: string }> = {
+    '5s':  { primary: '1S',  fallback: '5S'  },  // 1-second candles for tick-level intra-minute view
+    '15s': { primary: '5S',  fallback: '15S' },  // 5-second candles for ~15min window
+    '30s': { primary: '15S', fallback: '30S' },  // 15-second candles for 30min window
     '5m': { primary: '1', fallback: '5' },       // 1 minute for maximum spike capture
-    '15m': { primary: '1', fallback: '5' },      // 1 minute for maximum spike capture  
+    '15m': { primary: '1', fallback: '5' },      // 1 minute for maximum spike capture
     '1h': { primary: '5', fallback: '15' },      // 5 minutes for high resolution
     '4h': { primary: '15', fallback: '60' },     // 15 minutes for detailed capture
     '6h': { primary: '15', fallback: '60' },     // 15 minutes for detailed capture
@@ -456,6 +461,10 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
     } else {
       // Center the chart around the tweet time with improved ranges for better anchor visibility
       const timeRanges: Record<string, number> = {
+        // Sub-minute windows: tight around the tweet so every candle is meaningful
+        '5s':  5 * 60 * 1000,           // 5 minutes total (2.5min before/after tweet) → ~300 1s candles
+        '15s': 15 * 60 * 1000,          // 15 minutes total (7.5min before/after) → ~180 5s candles
+        '30s': 30 * 60 * 1000,          // 30 minutes total (15min before/after) → ~120 15s candles
         '5m': 3 * 60 * 60 * 1000,      // 3 hours total (1.5h before/after tweet)
         '15m': 8 * 60 * 60 * 1000,     // 8 hours total (4h before/after tweet)
         '1h': 16 * 60 * 60 * 1000,     // 16 hours total (8h before/after tweet)
@@ -478,6 +487,9 @@ function calculateTimeRange(timeframe: string, tweetTimestamp?: string | null) {
   } else {
     // Use recent data ending at current time
     const timeRanges: Record<string, number> = {
+      '5s': 5 * 60 * 1000,             // Last 5 minutes
+      '15s': 15 * 60 * 1000,           // Last 15 minutes
+      '30s': 30 * 60 * 1000,           // Last 30 minutes
       '5m': 4 * 60 * 60 * 1000,      // Last 4 hours
       '15m': 24 * 60 * 60 * 1000,    // Last 24 hours
       '1h': 7 * 24 * 60 * 60 * 1000, // Last 7 days
