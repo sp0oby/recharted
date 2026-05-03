@@ -1,7 +1,8 @@
 "use client"
 
 import type React from "react"
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
+import { Volume2, VolumeX } from "lucide-react"
 
 // Import Libre Franklin font
 import { Libre_Franklin } from 'next/font/google'
@@ -67,6 +68,22 @@ export default function TweetOverlay({
   const [isMobile, setIsMobile] = useState(false)
   const [isTouch, setIsTouch] = useState(false)
   const [storedTweetTime, setStoredTweetTime] = useState(tradeTime) // Store tweet time and update when tweet changes
+  // Browsers block autoplay on unmuted videos. Start muted so the video plays
+  // automatically; let the user tap to unmute.
+  const [isVideoMuted, setIsVideoMuted] = useState(true)
+  const videoElsRef = useRef<HTMLVideoElement[]>([])
+
+  // Keep every <video> in this tweet in sync with the unmute toggle.
+  useEffect(() => {
+    // Drop refs whose nodes have been unmounted by React (e.g. when a different
+    // tweet is loaded) so we don't keep operating on detached elements.
+    videoElsRef.current = videoElsRef.current.filter((v) => v && v.isConnected)
+    for (const v of videoElsRef.current) {
+      v.muted = isVideoMuted
+      // Re-poke play() in case the browser paused after the unmute change.
+      v.play().catch(() => {})
+    }
+  }, [isVideoMuted, tweetData])
   
   // Update stored tweet time when tradeTime changes (new tweet)
   useEffect(() => {
@@ -578,19 +595,65 @@ export default function TweetOverlay({
                   : '1 / 1'
 
               if (m.type === 'video' || m.type === 'animated_gif') {
+                const isAnimatedGif = m.type === 'animated_gif'
+                const originalVideoSrc = m.videoUrl || m.url
+                // video.twimg.com 403s direct browser fetches when there's no
+                // valid X session / referer. Routing through our same-origin
+                // proxy sidesteps that entirely.
+                const proxiedSrc = `/api/video-proxy?url=${encodeURIComponent(originalVideoSrc)}`
                 return (
-                  <video
+                  <div
                     key={i}
-                    src={m.videoUrl || m.url}
-                    poster={m.url}
-                    className={`w-full h-full object-cover ${spanRowsForFirstOfThree}`}
+                    className={`relative w-full h-full ${spanRowsForFirstOfThree}`}
                     style={{ aspectRatio: aspect }}
-                    muted
-                    loop
-                    playsInline
-                    autoPlay={m.type === 'animated_gif'}
-                    controls={m.type === 'video'}
-                  />
+                  >
+                    <video
+                      ref={(el) => {
+                        if (el && !videoElsRef.current.includes(el)) {
+                          videoElsRef.current.push(el)
+                        }
+                      }}
+                      src={proxiedSrc}
+                      poster={m.url}
+                      className="w-full h-full object-cover"
+                      muted={isVideoMuted}
+                      loop
+                      playsInline
+                      autoPlay
+                      preload="auto"
+                      data-video-src={originalVideoSrc}
+                      onLoadedMetadata={(e) => {
+                        // Some browsers won't honour autoPlay on a React-rendered
+                        // <video> until we explicitly call play() after the
+                        // element has metadata. This is the belt-and-braces fix.
+                        e.currentTarget.play().catch(() => {})
+                      }}
+                      onCanPlay={(e) => {
+                        e.currentTarget.play().catch(() => {})
+                      }}
+                    />
+                    {/* Animated GIFs are silent by definition — only show the
+                        unmute control on real videos. */}
+                    {!isAnimatedGif && (
+                      <button
+                        type="button"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          setIsVideoMuted((prev) => !prev)
+                        }}
+                        onMouseDown={(e) => e.stopPropagation()}
+                        onTouchStart={(e) => e.stopPropagation()}
+                        className="absolute bottom-1 right-1 sm:bottom-2 sm:right-2 z-10 bg-black/60 hover:bg-black/80 text-white rounded-full p-1 sm:p-1.5 backdrop-blur-sm transition-colors"
+                        aria-label={isVideoMuted ? 'Unmute video' : 'Mute video'}
+                      >
+                        {isVideoMuted ? (
+                          <VolumeX className="w-3 h-3 sm:w-4 sm:h-4" />
+                        ) : (
+                          <Volume2 className="w-3 h-3 sm:w-4 sm:h-4" />
+                        )}
+                      </button>
+                    )}
+                  </div>
                 )
               }
               return (

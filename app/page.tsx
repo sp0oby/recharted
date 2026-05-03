@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Label } from "@/components/ui/label"
-import { Download, Move, Zap, Copy } from "lucide-react"
+import { Download, Move, Zap, Copy, Film } from "lucide-react"
 import TradingChart from "@/components/trading-chart"
 import TweetOverlay from "@/components/tweet-overlay"
 import TokenSearch, { type TokenSearchResult } from "@/components/token-search"
@@ -60,6 +60,7 @@ export default function TweetChartAnchor() {
   const [isDragging, setIsDragging] = useState(false)
   const [isGenerated, setIsGenerated] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [isExportingVideo, setIsExportingVideo] = useState(false)
   const [chartData, setChartData] = useState<ChartData | undefined>()
   const [apiChartData, setApiChartData] = useState<any>(undefined)
   const [fetchedTweetData, setFetchedTweetData] = useState<TweetData | null>(null)
@@ -74,6 +75,9 @@ export default function TweetChartAnchor() {
     text: "fuck it\n\njew mode.",
     timestamp: new Date().toISOString(),
   }
+
+  // Show the MP4 button only when the tweet actually contains a video or animated GIF.
+  const hasVideo = tweetData.media?.some((m) => m.type === "video" || m.type === "animated_gif") ?? false
 
   const handleSearchSelect = async (token: TokenSearchResult) => {
     const network = {
@@ -329,6 +333,299 @@ export default function TweetChartAnchor() {
     }
   }
 
+  // Records the chart card with the autoplaying tweet video composited on top
+  // and saves it as MP4 (or WebM where MP4 isn't supported).
+  //
+  // Why a hidden proxied <video> element instead of the visible one:
+  // The visible <video> in TweetOverlay loads directly from video.twimg.com
+  // (no crossOrigin attribute, so autoplay works). But that means drawing it
+  // onto a canvas would taint the canvas and html2canvas/MediaRecorder would
+  // reject. We get around this by piping the same source through our
+  // /api/video-proxy route as same-origin, on a hidden <video> with
+  // crossOrigin="anonymous", and using *that* element as the drawImage source.
+  const handleDownloadVideo = async () => {
+    if (!chartCardRef.current || !chartContainerRef.current) return
+
+    const visibleVideo = chartCardRef.current.querySelector("video") as HTMLVideoElement | null
+    if (!visibleVideo) {
+      toast({
+        title: "No video in this tweet",
+        description: "This tweet doesn't have a video to record.",
+        variant: "destructive",
+        duration: 4000,
+      })
+      return
+    }
+
+    const sourceUrl =
+      visibleVideo.getAttribute("data-video-src") || visibleVideo.currentSrc || visibleVideo.src
+    if (!sourceUrl) {
+      toast({
+        title: "Video source unavailable",
+        description: "Couldn't find the video URL on this tweet.",
+        variant: "destructive",
+        duration: 4000,
+      })
+      return
+    }
+
+    setIsExportingVideo(true)
+
+    // Constrain tweet position so it sits inside the frame for capture.
+    const originalPosition = tweetPosition
+    const containerRect = chartContainerRef.current.getBoundingClientRect()
+    const isMobile = window.innerWidth < 768
+    const tweetWidth = isMobile ? 128 : 288
+    const tweetHeight = isMobile ? 80 : 120
+    const constrainedPosition = {
+      x: Math.max(0, Math.min(originalPosition.x, containerRect.width - tweetWidth)),
+      y: Math.max(0, Math.min(originalPosition.y, containerRect.height - tweetHeight)),
+    }
+    setTweetPosition(constrainedPosition)
+    await new Promise((r) => setTimeout(r, 200))
+
+    // Build a same-origin URL for the recording-only video element so the
+    // composite canvas isn't tainted.
+    const proxyUrl = `/api/video-proxy?url=${encodeURIComponent(sourceUrl)}`
+
+    // Off-screen <video> we'll actually draw from. Kept off-DOM-flow with
+    // visibility:hidden + position:fixed so layout isn't affected.
+    const recVideo = document.createElement("video")
+    recVideo.crossOrigin = "anonymous"
+    recVideo.muted = true
+    recVideo.loop = true
+    recVideo.playsInline = true
+    recVideo.preload = "auto"
+    recVideo.style.position = "fixed"
+    recVideo.style.left = "-99999px"
+    recVideo.style.top = "0"
+    recVideo.style.width = "1px"
+    recVideo.style.height = "1px"
+    recVideo.style.opacity = "0"
+    recVideo.style.pointerEvents = "none"
+    recVideo.src = proxyUrl
+    document.body.appendChild(recVideo)
+
+    let raf = 0
+    let visibleVideoOriginalVisibility: string | null = null
+    let audioCtx: AudioContext | null = null
+
+    const cleanupRecVideo = () => {
+      try {
+        recVideo.pause()
+      } catch {}
+      try {
+        recVideo.removeAttribute("src")
+        recVideo.load()
+      } catch {}
+      if (recVideo.parentNode) recVideo.parentNode.removeChild(recVideo)
+      if (audioCtx) {
+        audioCtx.close().catch(() => {})
+        audioCtx = null
+      }
+    }
+
+    try {
+      // Wait for the proxied video to be ready enough that drawImage will work.
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("Video proxy load timed out")), 15000)
+        const onReady = () => {
+          clearTimeout(timer)
+          recVideo.removeEventListener("canplay", onReady)
+          recVideo.removeEventListener("loadeddata", onReady)
+          recVideo.removeEventListener("error", onError)
+          resolve()
+        }
+        const onError = () => {
+          clearTimeout(timer)
+          recVideo.removeEventListener("canplay", onReady)
+          recVideo.removeEventListener("loadeddata", onReady)
+          recVideo.removeEventListener("error", onError)
+          reject(new Error("Video proxy failed to load"))
+        }
+        recVideo.addEventListener("canplay", onReady, { once: true })
+        recVideo.addEventListener("loadeddata", onReady, { once: true })
+        recVideo.addEventListener("error", onError, { once: true })
+        // Kick the load explicitly in case the browser hasn't started yet.
+        recVideo.load()
+      })
+
+      // Hide the visible video during the static snapshot so html2canvas doesn't
+      // try to rasterise the cross-origin element (which can throw the
+      // unhandled-rejection Event we were seeing).
+      visibleVideoOriginalVisibility = visibleVideo.style.visibility
+      visibleVideo.style.visibility = "hidden"
+
+      // Static snapshot of the entire chart card. The live video frame will be
+      // drawn over the same pixel region every animation frame.
+      const staticCanvas = await html2canvas(chartCardRef.current, {
+        backgroundColor: "#000000",
+        scale: 2,
+        useCORS: true,
+      })
+
+      // Restore the visible video before measuring, so its rect matches what
+      // the user sees when not exporting.
+      visibleVideo.style.visibility = visibleVideoOriginalVisibility || ""
+      visibleVideoOriginalVisibility = null
+
+      const cardRect = chartCardRef.current.getBoundingClientRect()
+      const vidRect = visibleVideo.getBoundingClientRect()
+      const scaleFactor = staticCanvas.width / cardRect.width
+      const vidX = (vidRect.left - cardRect.left) * scaleFactor
+      const vidY = (vidRect.top - cardRect.top) * scaleFactor
+      const vidW = vidRect.width * scaleFactor
+      const vidH = vidRect.height * scaleFactor
+
+      const composite = document.createElement("canvas")
+      composite.width = staticCanvas.width
+      composite.height = staticCanvas.height
+      const cctx = composite.getContext("2d")
+      if (!cctx) throw new Error("Could not create 2D canvas context")
+
+      // We MUST require AAC audio inside MP4 — Chrome's MediaRecorder will
+      // happily mux Opus into an .mp4 container, but most players (QuickTime,
+      // iOS Photos, Twitter's own preview, etc.) refuse to play that file.
+      // If we can't get AAC-in-MP4, fall through to WebM (which natively
+      // pairs VP9/VP8 with Opus and is accepted by X, Discord, Telegram).
+      const candidates = [
+        "video/mp4;codecs=avc1.42E01E,mp4a.40.2",
+        "video/mp4;codecs=avc1,mp4a.40.2",
+        "video/mp4;codecs=h264,aac",
+        "video/webm;codecs=vp9,opus",
+        "video/webm;codecs=vp8,opus",
+        "video/webm",
+      ]
+      let mimeType = ""
+      if (typeof MediaRecorder !== "undefined") {
+        for (const type of candidates) {
+          if (MediaRecorder.isTypeSupported(type)) {
+            mimeType = type
+            break
+          }
+        }
+      }
+      if (!mimeType) throw new Error("Your browser doesn't support video recording.")
+
+      // Audio routing via Web Audio API. We deliberately do NOT use
+      // recVideo.captureStream() for audio because:
+      //   - Chrome's behaviour with muted+captureStream is browser-version
+      //     dependent (sometimes emits a permanently-muted track).
+      //   - We want the user to NOT hear the audio while exporting.
+      // Instead: createMediaElementSource → MediaStreamDestination, never
+      // connect to ctx.destination. That gives us audio in the recording
+      // and silence in the room.
+      const stream = composite.captureStream(30)
+      try {
+        const Ctx =
+          (window as unknown as { AudioContext?: typeof AudioContext }).AudioContext ||
+          (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext
+        if (Ctx) {
+          audioCtx = new Ctx()
+          // Some browsers start the context suspended until a user gesture;
+          // the download click already counts as one, but resume() is safe.
+          if (audioCtx.state === "suspended") await audioCtx.resume().catch(() => {})
+          const source = audioCtx.createMediaElementSource(recVideo)
+          const dest = audioCtx.createMediaStreamDestination()
+          source.connect(dest)
+          // Note: deliberately NOT connecting source to audioCtx.destination,
+          // so the user doesn't hear the audio during export.
+          for (const track of dest.stream.getAudioTracks()) {
+            stream.addTrack(track)
+          }
+        }
+      } catch (audioErr) {
+        // Non-fatal — we'll still get a silent video.
+        console.warn("Audio capture failed, exporting silent video:", audioErr)
+      }
+
+      // Start playback. Once createMediaElementSource has been called above,
+      // local playback is rerouted away from the speakers, so even with
+      // muted=false there's no audible output here.
+      recVideo.muted = false
+      try {
+        recVideo.currentTime = 0
+      } catch {}
+      await recVideo.play().catch(() => {})
+
+      const recorder = new MediaRecorder(stream, {
+        mimeType,
+        videoBitsPerSecond: 4_000_000,
+        audioBitsPerSecond: 128_000,
+      })
+      const chunks: Blob[] = []
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data)
+      }
+
+      const draw = () => {
+        cctx.drawImage(staticCanvas, 0, 0)
+        try {
+          cctx.drawImage(recVideo, vidX, vidY, vidW, vidH)
+        } catch {
+          // drawImage can throw if the video is not yet decoded; just skip this frame
+        }
+        raf = requestAnimationFrame(draw)
+      }
+      draw()
+
+      recorder.start()
+
+      const rawDur = isFinite(recVideo.duration) && recVideo.duration > 0 ? recVideo.duration : 6
+      const dur = Math.max(2, Math.min(rawDur, 10))
+      await new Promise((r) => setTimeout(r, dur * 1000))
+
+      cancelAnimationFrame(raf)
+      raf = 0
+      await new Promise<void>((resolve) => {
+        recorder.onstop = () => resolve()
+        recorder.stop()
+      })
+
+      setTweetPosition(originalPosition)
+
+      const ext = mimeType.startsWith("video/mp4") ? "mp4" : "webm"
+      const blob = new Blob(chunks, { type: mimeType })
+      if (blob.size === 0) {
+        throw new Error("Recording produced no data. The video may be CORS-blocked by Twitter.")
+      }
+
+      const url = URL.createObjectURL(blob)
+      const link = document.createElement("a")
+      link.href = url
+      link.download = `recharted.io-${apiChartData?.symbol?.replace("/", "-") || "roast"}-exposed.${ext}`
+      document.body.appendChild(link)
+      link.click()
+      document.body.removeChild(link)
+      URL.revokeObjectURL(url)
+
+      toast({
+        title: ext === "mp4" ? "MP4 saved" : "WebM saved",
+        description:
+          ext === "mp4"
+            ? "Video receipt saved to your downloads."
+            : "Your browser can't record native MP4. Saved as WebM — X, Discord, and Telegram all accept it.",
+        duration: 5000,
+      })
+    } catch (error) {
+      console.error("Video export failed:", error)
+      setTweetPosition(originalPosition)
+      toast({
+        title: "Video export failed",
+        description: error instanceof Error ? error.message : "Unknown error",
+        variant: "destructive",
+        duration: 5000,
+      })
+    } finally {
+      if (raf) cancelAnimationFrame(raf)
+      if (visibleVideoOriginalVisibility !== null) {
+        visibleVideo.style.visibility = visibleVideoOriginalVisibility
+      }
+      cleanupRecVideo()
+      setIsExportingVideo(false)
+    }
+  }
+
   const handleMouseDown = (e: React.MouseEvent) => {
     setIsDragging(true)
   }
@@ -534,6 +831,17 @@ export default function TweetChartAnchor() {
                     <Download className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" />
                     DOWNLOAD
                   </Button>
+
+                  {hasVideo && (
+                    <Button
+                      onClick={handleDownloadVideo}
+                      disabled={isExportingVideo}
+                      className="flex-1 bg-yellow-400 text-black border-4 border-black hover:bg-yellow-300 font-black text-sm sm:text-base md:text-lg py-3 sm:py-4 md:py-6 shadow-[2px_2px_0px_0px_#000000] md:shadow-[4px_4px_0px_0px_#000000] hover:shadow-[1px_1px_0px_0px_#000000] md:hover:shadow-[2px_2px_0px_0px_#000000] transition-all disabled:opacity-50 min-h-[48px] sm:min-h-[52px]"
+                    >
+                      <Film className="w-4 h-4 sm:w-5 sm:h-5 mr-1 sm:mr-2" />
+                      {isExportingVideo ? "RECORDING..." : "DOWNLOAD MP4"}
+                    </Button>
+                  )}
                 </>
               )}
             </div>
