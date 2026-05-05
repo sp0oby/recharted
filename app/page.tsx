@@ -11,6 +11,20 @@ import { Download, Move, Zap, Copy, Film } from "lucide-react"
 import TradingChart from "@/components/trading-chart"
 import TweetOverlay from "@/components/tweet-overlay"
 import TokenSearch, { type TokenSearchResult } from "@/components/token-search"
+import IntervalSlider, { type IntervalStop } from "@/components/interval-slider"
+
+// Slider stops shown to the user. The `value` is the internal timeframe key
+// already understood by /api/codex (resolutionMap, calculateTimeRange) and
+// components/trading-chart.tsx (getTimeframeInMs, convertApiDataToChartData),
+// so swapping to the slider doesn't require any backend or chart changes.
+const INTERVAL_STOPS: IntervalStop[] = [
+  { label: "1m",  value: "5m", hint: "1-minute candles · ~3h window" },
+  { label: "5m",  value: "1h", hint: "5-minute candles · ~16h window" },
+  { label: "6h",  value: "6h", hint: "15-minute candles · ~8d window" },
+  { label: "1d",  value: "1d", hint: "1-hour candles · ~30d window" },
+  { label: "7d",  value: "1w", hint: "4-hour candles · ~90d window" },
+  { label: "1m+", value: "1m", hint: "Daily candles · 2mo+ since tweet" },
+]
 import html2canvas from "html2canvas"
 import { fetchTweetData, fetchChartDataWithHistory, testDexScreenerAPI } from "@/lib/api"
 import { useToast } from "@/hooks/use-toast"
@@ -764,14 +778,14 @@ export default function TweetChartAnchor() {
 
 
                 <div className="space-y-2">
-                              <Label htmlFor="timeframe" className="font-bold text-base md:text-lg">
-              Chart Interval
-            </Label>
-                  <select
-                    id="timeframe"
+                  <Label className="font-bold text-base md:text-lg">
+                    Chart Interval
+                  </Label>
+                  <IntervalSlider
+                    stops={INTERVAL_STOPS}
                     value={timeframe}
-                    onChange={async (e) => {
-                      const newTimeframe = e.target.value
+                    disabled={isLoading}
+                    onChange={async (newTimeframe) => {
                       setTimeframe(newTimeframe)
                       // Auto-generate when timeframe changes if chart is already generated
                       if (isGenerated && chartUrl && tweetUrl) {
@@ -779,26 +793,7 @@ export default function TweetChartAnchor() {
                         await generateChart()
                       }
                     }}
-                    className="w-full border-2 border-black font-bold text-base md:text-lg p-3 bg-white"
-                  >
-                    <optgroup label="Sub-minute (intra-minute motion)">
-                      <option value="5s">5min window · 1s candles</option>
-                      <option value="15s">15min window · 5s candles</option>
-                      <option value="30s">30min window · 15s candles</option>
-                    </optgroup>
-                    <optgroup label="Minutes / Hours">
-                      <option value="5m">3h window · 1m candles</option>
-                      <option value="15m">8h window · 1m candles</option>
-                      <option value="1h">16h window · 5m candles</option>
-                      <option value="4h">5d window · 15m candles</option>
-                      <option value="6h">8d window · 15m candles</option>
-                    </optgroup>
-                    <optgroup label="Days / Weeks">
-                      <option value="1d">30d window · 1h candles</option>
-                      <option value="1w">90d window · 4h candles</option>
-                      <option value="1m">2mo+ since tweet · 1d candles</option>
-                    </optgroup>
-                  </select>
+                  />
                 </div>
               </CardContent>
             </Card>

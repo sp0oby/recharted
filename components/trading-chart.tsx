@@ -178,8 +178,14 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
           scales: {
             x: {
               display: true,
+              // Pro trading-chart look: no vertical gridlines. Vertical rules
+              // chop up the price action and aren't carrying any information
+              // the x-axis ticks themselves don't already convey.
               grid: {
-                color: "#333333",
+                display: false,
+              },
+              border: {
+                color: "rgba(255, 255, 255, 0.15)",
               },
               ticks: {
                 color: "#ffffff",
@@ -191,7 +197,17 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                 autoSkipPadding: 12,
                 maxRotation: 0,
                 minRotation: 0,
-                maxTicksLimit: window.innerWidth < 768 ? 5 : 9,
+                // Tightened from 5/9 — fewer, more breathable ticks reads as
+                // a real charting app instead of a busy data dump.
+                maxTicksLimit: (() => {
+                  const isMobile = window.innerWidth < 768
+                  // Sub-minute & long-range views look better with very few ticks.
+                  if (timeframe === "1m" || timeframe === "1w") return isMobile ? 4 : 6
+                  if (timeframe === "5s" || timeframe === "15s" || timeframe === "30s") {
+                    return isMobile ? 4 : 6
+                  }
+                  return isMobile ? 5 : 7
+                })(),
                 // For category scales, `value` is the data index. Use it (not `index`,
                 // which is the position within the post-autoSkip ticks array) to look up
                 // the corresponding pre-formatted label.
@@ -244,8 +260,14 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                 console.log(`📊 Y-axis max (FALLBACK): $${result.toFixed(8)} (dataset max: $${maxPrice.toFixed(8)})`)
                 return result
               },
+              // Faint horizontal gridlines only — enough to read price levels
+              // off, not enough to compete with the data.
               grid: {
-                color: "#333333",
+                color: "rgba(255, 255, 255, 0.06)",
+                drawTicks: false,
+              },
+              border: {
+                display: false,
               },
               ticks: {
                 color: "#ffffff",
@@ -253,6 +275,7 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                   size: window.innerWidth < 768 ? 10 : 12,
                   weight: "bold",
                 },
+                padding: 6,
                 // Increase tick count for better granularity with extreme variance
                 maxTicksLimit: window.innerWidth < 768 ? 8 : 12,
                 stepSize: undefined, // Let Chart.js auto-calculate for optimal spacing
@@ -452,35 +475,46 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
       const date = new Date(timestamp)
       let timeString: string
 
-      // Format time based on timeframe - consistent formatting across all timeframes
+      // Format time based on timeframe. Goal: every label is the SHORTEST
+      // string that's still unambiguous inside that window. "Jul 12 14:30"
+      // on a chart whose x-axis only spans 3 hours is just noise.
       if (timeframe === "5s" || timeframe === "15s" || timeframe === "30s") {
-        // Sub-minute timeframes: show HH:MM:SS so the second matters
+        // Sub-minute: HH:MM:SS, the second is what matters here
         timeString = date.toLocaleTimeString("en-US", {
           hour: "2-digit",
           minute: "2-digit",
           second: "2-digit",
           hour12: false,
         })
+      } else if (timeframe === "5m" || timeframe === "15m" || timeframe === "1h") {
+        // Intra-day windows (≤ 16h shown): HH:MM only. The day rarely
+        // changes inside the visible range; if it does the user still has
+        // the tweet timestamp for context.
+        timeString = date.toLocaleTimeString("en-US", {
+          hour: "2-digit",
+          minute: "2-digit",
+          hour12: false,
+        })
       } else if (timeframe === "1w") {
-        // For weekly, show date only (no time, no year for consistency)
+        // Weekly view: date only
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
         })
       } else if (timeframe === "1m") {
-        // For monthly, show month and year
+        // Monthly view: month + year
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           year: "numeric",
         })
       } else if (timeframe === "1d") {
-        // For daily, show date only (no time, no year for consistency)
+        // Daily view: date only
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
         })
       } else if (timeframe === "4h" || timeframe === "6h") {
-        // For 4h and 6h, show date and time (consistent with shorter timeframes)
+        // Multi-day windows: need both day and hour to avoid ambiguity
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
@@ -489,7 +523,6 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
           hour12: false,
         })
       } else {
-        // For shorter timeframes, show date and time
         timeString = date.toLocaleDateString("en-US", {
           month: "short",
           day: "numeric",
