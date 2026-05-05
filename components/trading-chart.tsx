@@ -191,7 +191,9 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                 color: "#ffffff",
                 font: {
                   size: window.innerWidth < 768 ? 10 : 12,
-                  weight: "bold",
+                  // Match the y-axis: bold at 10px on mobile is chunky, drop
+                  // to semibold so the time labels don't fight the price line.
+                  weight: window.innerWidth < 768 ? "600" : "bold",
                 },
                 autoSkip: true,
                 autoSkipPadding: 12,
@@ -273,11 +275,15 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                 color: "#ffffff",
                 font: {
                   size: window.innerWidth < 768 ? 10 : 12,
-                  weight: "bold",
+                  // Bold at 10px on mobile reads as chunky/noisy; semibold keeps
+                  // the labels legible without competing with the price line.
+                  weight: window.innerWidth < 768 ? "600" : "bold",
                 },
                 padding: 6,
-                // Increase tick count for better granularity with extreme variance
-                maxTicksLimit: window.innerWidth < 768 ? 8 : 12,
+                // Mobile gets a much smaller chart height — 8 ticks crammed in
+                // looks like a wall of text. 5 mirrors what real trading apps
+                // (DexScreener, Birdeye) show on phones.
+                maxTicksLimit: window.innerWidth < 768 ? 5 : 12,
                 stepSize: undefined, // Let Chart.js auto-calculate for optimal spacing
                 // Format as either price (for popular tokens) or market cap (for other tokens)
                 callback: function(value: any): string {
@@ -382,7 +388,10 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                 }
               },
               title: {
-                display: true,
+                // Hide on mobile — the symbol is already in the card header,
+                // the labels are clearly $ values, and the rotated title eats
+                // ~30-40px of a ~340px-wide canvas.
+                display: window.innerWidth >= 768,
                 text: isPopularToken ? 'Price' : 'Market Cap',
                 color: '#ffffff',
                 font: {
@@ -412,7 +421,9 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
                 data: dataToUse.prices,
                 borderColor: "#00ff00",
                 backgroundColor: "rgba(0, 255, 0, 0.1)",
-                borderWidth: window.innerWidth < 768 ? 2 : 3,
+                // 2px on retina mobile sometimes anti-aliases into a faint line.
+                // 2.5 keeps it crisp without crossing the desktop "3" threshold.
+                borderWidth: window.innerWidth < 768 ? 2.5 : 3,
                 fill: false,
                 tension: 0.1,
                 pointRadius: 0,
@@ -670,14 +681,21 @@ export default function TradingChart({ tokenPair, onChartReady, chartData, timef
   }
 
   return (
-    <div className="w-full h-full p-1 sm:p-2 md:p-4 bg-black relative" style={{ maxHeight: '100%', overflow: 'hidden' }}>
-      <canvas 
-        ref={chartRef} 
-        className="w-full h-full" 
+    // absolute inset-0 instead of w-full h-full: percentage heights only
+    // resolve against an ancestor with an explicit `height` (not min-height),
+    // and during the brief unmount/remount on timeframe change the flex chain
+    // can go ambiguous and collapse `h-full` to ~0. Pinning the wrapper to its
+    // (relative-positioned) parent's box sidesteps that entirely so Chart.js
+    // always reads a real container size on every (re)mount.
+    <div
+      className="absolute inset-0 p-1 sm:p-2 md:p-4 bg-black overflow-hidden"
+    >
+      <canvas
+        ref={chartRef}
+        className="w-full h-full block"
         onWheel={(e) => e.preventDefault()}
-        style={{ touchAction: 'none', maxHeight: '100%', maxWidth: '100%', backgroundColor: '#000000' }}
+        style={{ touchAction: 'none', backgroundColor: '#000000' }}
       />
-
     </div>
   )
 }

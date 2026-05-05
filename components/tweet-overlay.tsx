@@ -115,9 +115,11 @@ export default function TweetOverlay({
         const timeAnchor = calculateTimeAnchorOnLine(storedTweetTime, chartArea, chartData, chart)
         setAnchorPoint(timeAnchor)
 
-        // Calculate tweet center - adjust for mobile
-        const tweetWidth = isMobile ? 176 : 288
-        const tweetHeight = isMobile ? 100 : 120
+        // Calculate tweet center - adjust for mobile.
+        // Keep these in sync with handleMouseMove / handleDownload* in app/page.tsx
+        // and with the visual `w-32`/`w-60` classes on the tweet card below.
+        const tweetWidth = isMobile ? 128 : 240
+        const tweetHeight = isMobile ? 65 : 100
         const tweetCenterX = position.x + tweetWidth / 2
         const tweetCenterY = position.y + tweetHeight / 2
 
@@ -447,10 +449,13 @@ export default function TweetOverlay({
     return closestIndex
   }
 
-  // Responsive tweet card dimensions
-  const tweetWidth = isMobile ? "w-44" : "w-72"
-  const anchorSize = isMobile ? "w-4 h-4" : "w-5 h-5"
-  const anchorOffset = isMobile ? 8 : 10
+  // Responsive tweet card dimensions. w-32 (128px) on mobile combined with
+  // line-clamped text and hidden media (see below) keeps the card a true wide
+  // rectangle — roughly 128 × 65, ~2:1 aspect — instead of a tall narrow strip.
+  // Must match the 128 / 240 drag/clamp constants in app/page.tsx.
+  const tweetWidth = isMobile ? "w-32" : "w-60"
+  const anchorSize = isMobile ? "w-3 h-3" : "w-5 h-5"
+  const anchorOffset = isMobile ? 6 : 10
 
   // Use stored tweet time for labels to maintain consistency
   const timeLabel = storedTweetTime.includes('-') ? 
@@ -561,19 +566,23 @@ export default function TweetOverlay({
           </div>
         </div>
 
-        {/* Tweet Content */}
+        {/* Tweet Content. On mobile we clamp to 2 lines (line-clamp-2) so a
+            long tweet can't make the card grow tall — keeping the rectangle
+            shape. Desktop is unconstrained (sm:line-clamp-none). */}
         <div className="mb-1 sm:mb-2 md:mb-3">
-          <p className="text-xs sm:text-sm md:text-base font-normal leading-relaxed sm:leading-tight break-words"
+          <p className="text-xs sm:text-sm md:text-base font-normal leading-tight sm:leading-tight break-words line-clamp-2 sm:line-clamp-none"
              style={{
                wordWrap: 'break-word',
                overflowWrap: 'break-word'
              }}>{tweetData.text}</p>
         </div>
 
-        {/* Tweet Media (photos, videos, gifs) */}
+        {/* Tweet Media (photos, videos, gifs). Hidden on mobile so the card
+            can stay a tight rectangle; media at <128px wide reads as a smear
+            anyway. Shown from sm: up where there's room. */}
         {tweetData.media && tweetData.media.length > 0 && (
           <div
-            className={`mb-1 sm:mb-2 md:mb-3 grid gap-0.5 sm:gap-1 rounded overflow-hidden border-1 sm:border-2 border-black ${
+            className={`hidden sm:grid mb-1 sm:mb-2 md:mb-3 gap-0.5 sm:gap-1 rounded overflow-hidden border-1 sm:border-2 border-black ${
               tweetData.media.length === 1
                 ? 'grid-cols-1'
                 : tweetData.media.length === 2
@@ -671,16 +680,18 @@ export default function TweetOverlay({
           </div>
         )}
 
-        {/* Tweet Metadata - Hide on mobile to save space */}
-        <div className="hidden sm:block text-xs text-gray-600 font-normal mb-1 sm:mb-2">
-          {new Date(tweetData.timestamp).toLocaleDateString("en-US", { 
-            month: "short", 
-            day: "numeric", 
-            year: "numeric" 
-          })} · {new Date(tweetData.timestamp).toLocaleTimeString("en-US", { 
-            hour: "2-digit", 
-            minute: "2-digit", 
-            hour12: true 
+        {/* Tweet Metadata - now shown on mobile too (smaller text) since the
+            wider card has room and the timestamp is part of the "real tweet"
+            look users get on the desktop version. */}
+        <div className="block text-[10px] sm:text-xs text-gray-600 font-normal mb-1 sm:mb-2">
+          {new Date(tweetData.timestamp).toLocaleDateString("en-US", {
+            month: "short",
+            day: "numeric",
+            year: "numeric"
+          })} · {new Date(tweetData.timestamp).toLocaleTimeString("en-US", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: true
           })}
         </div>
       </div>

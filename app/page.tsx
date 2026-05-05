@@ -243,8 +243,8 @@ export default function TweetChartAnchor() {
         const originalPosition = tweetPosition
         const containerRect = chartContainerRef.current.getBoundingClientRect()
         const isMobile = window.innerWidth < 768
-        const tweetWidth = isMobile ? 128 : 288
-        const tweetHeight = isMobile ? 80 : 120
+        const tweetWidth = isMobile ? 128 : 240
+        const tweetHeight = isMobile ? 65 : 100
         
         // Ensure tweet is fully within container bounds
         const constrainedPosition = {
@@ -284,8 +284,8 @@ export default function TweetChartAnchor() {
         const originalPosition = tweetPosition
         const containerRect = chartContainerRef.current.getBoundingClientRect()
         const isMobile = window.innerWidth < 768
-        const tweetWidth = isMobile ? 128 : 288
-        const tweetHeight = isMobile ? 80 : 120
+        const tweetWidth = isMobile ? 128 : 240
+        const tweetHeight = isMobile ? 65 : 100
         
         // Ensure tweet is fully within container bounds
         const constrainedPosition = {
@@ -389,8 +389,8 @@ export default function TweetChartAnchor() {
     const originalPosition = tweetPosition
     const containerRect = chartContainerRef.current.getBoundingClientRect()
     const isMobile = window.innerWidth < 768
-    const tweetWidth = isMobile ? 128 : 288
-    const tweetHeight = isMobile ? 80 : 120
+    const tweetWidth = isMobile ? 128 : 240
+    const tweetHeight = isMobile ? 65 : 100
     const constrainedPosition = {
       x: Math.max(0, Math.min(originalPosition.x, containerRect.width - tweetWidth)),
       y: Math.max(0, Math.min(originalPosition.y, containerRect.height - tweetHeight)),
@@ -648,8 +648,8 @@ export default function TweetChartAnchor() {
     if (isDragging && chartContainerRef.current) {
       const rect = chartContainerRef.current.getBoundingClientRect()
       const isMobile = window.innerWidth < 768
-      const offsetX = isMobile ? 64 : 144 // Mobile: 128px/2, Desktop: 288px/2
-      const offsetY = isMobile ? 40 : 60
+      const offsetX = isMobile ? 64 : 120 // Mobile: 128px/2, Desktop: 240px/2
+      const offsetY = isMobile ? 33 : 50  // Mobile: ~65px/2, Desktop: 100px/2
       
       let clientX: number, clientY: number
       if ('touches' in e) {
@@ -662,9 +662,14 @@ export default function TweetChartAnchor() {
         clientY = e.clientY
       }
       
-      const tweetWidth = isMobile ? 128 : 288
-      const tweetHeight = isMobile ? 60 : 120
-      
+      // Must match the values in handleDownload / handleCopyToClipboard /
+      // handleDownloadVideo and the visual `w-32`/`w-60` in TweetOverlay.
+      // They were drifting (60 here vs. 80 in the download paths vs. 100 in the
+      // overlay), which clamped the tweet against the wrong rectangle and made
+      // dragging feel "stuck" right after a timeframe change.
+      const tweetWidth = isMobile ? 128 : 240
+      const tweetHeight = isMobile ? 65 : 100
+
       let x = clientX - rect.left - offsetX
       let y = clientY - rect.top - offsetY
       
@@ -857,7 +862,12 @@ export default function TweetChartAnchor() {
                 {isGenerated ? (
                   <div
                     ref={chartContainerRef}
-                    className="relative w-full h-full bg-black overflow-hidden cursor-crosshair touch-none"
+                    // Mirror the right-panel min-h floors directly on the chart
+                    // container so it doesn't briefly collapse when the chart
+                    // unmounts/remounts on timeframe change (key includes
+                    // ${timeframe} + ${generationId}). Without this, mobile users
+                    // see the box shrink between the unmount and the new mount.
+                    className="relative w-full h-full bg-black overflow-hidden cursor-crosshair touch-none min-h-[360px] sm:min-h-[420px] md:min-h-[480px] lg:min-h-[540px]"
                     onMouseMove={handleMouseMove}
                     onMouseUp={handleMouseUp}
                     onMouseLeave={handleMouseUp}
